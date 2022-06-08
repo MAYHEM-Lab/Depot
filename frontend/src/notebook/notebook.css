@@ -1,0 +1,138 @@
+#notebook {
+  flex: 1 1 auto;
+}
+
+.p-BoxPanel {
+  height: 100%;
+}
+
+.cluster-select-header {
+  font-size: 16px;
+}
+
+.cluster-select-title {
+  padding-left: 5px;
+}
+
+.cluster-select-description {
+  padding-top: 5px;
+  padding-left: 10px;
+}
+
+.dataset-creator {
+  cursor: auto;
+}
+
+.strategy-container {
+  padding-top: 1em;
+  padding-left: 2em;
+  text-align: left;
+}
+
+.strategy-text {
+  width: 150px;
+}
+
+.strategy-input {
+  padding-top: 1em;
+  justify-content: center;
+  display: flex;
+  padding-right: 100px;
+}
+
+.strategy-triggers-list {
+  padding-top: 1em;
+  width: 200px;
+  text-align: center;
+}
+
+.strategy-description {
+  display: flex !important;
+  justify-content: left !important;
+}
+
+.strategy-button {
+  text-align: center !important;
+  width: 90px;
+}
+
+.notebook-creator-menu {
+  text-align: center;
+}
+
+.notebook-tab-bar {
+  width: 100%;
+  border-bottom: 1px solid lightgray;
+  display: inline-flex !important;
+}
+
+.notebook-tab-items {
+  overflow-x: auto;
+  flex-basis: 95%;
+  margin: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  min-height: 2em !important;
+}
+
+.notebook-tab-item {
+  cursor: pointer;
+  max-width: 300px;
+  border: 1px solid lightgray;
+  border-bottom: 4px solid ghostwhite;
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+  box-sizing:content-box;
+  background-color: ghostwhite;
+  display: flex;
+  align-items: center;
+}
+
+.notebook-action-button {
+}
+
+.notebook-tab-item.selected {
+  border-bottom: 4px solid dodgerblue;
+}
+
+.notebook-tab-item.selected:hover {
+  background-color: #f0f0f0;
+}
+
+.notebook-tab-item:not(.selected):hover {
+  background-color: #f0f0f0;
+  border-bottom: 4px solid #f0f0f0;
+}
+
+.notebook-tab-title {
+  max-width: 90%;
+  padding-left: 5px;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.notebook-tab-title.anonymous {
+  color: gray;
+}
+
+.notebook-tab-button {
+  text-align: center;
+  height: 20px;
+  width: 20px;
+  margin-left: 5px;
+  margin-right: 5px;
+  line-height: 20px;
+  border-radius: 50%;
+  font-size: 20px;
+}
+
+.notebook-tab-button:hover {
+  background-color: lightgray;
+}
+
+
+.jp-NotebookPanel {
+  border-top: 1px solid #e0e0e0;
+}

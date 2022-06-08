@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: notebook-executor
+  name: notebook-executor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notebook-executor
+  template:
+    metadata:
+      labels:
+        app: notebook-executor
+    spec:
+      hostname: notebook-executor
+      containers:
+        - name: notebook-executor
+          image: racelab/depot-executor:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--depot-endpoint=http://manager.default:8888"
+            - "--depot-access-key=$(CLUSTER_TOKEN)"
+          env:
+            - name: CLUSTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-credentials
+                  key: token
+                  optional: false
+          ports:
+            - containerPort: 9998
+          resources:
+            requests:
+              memory: 4000Mi
+              cpu: 1500m
+            limits:
+              memory: 4000Mi
+              cpu: 1500m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notebook-executor
+spec:
+  clusterIP: None
+  ports:
+    - port: 9998
+      targetPort: 9998
+  selector:
+    app: notebook-executor

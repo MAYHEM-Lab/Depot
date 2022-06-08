@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: notebook-router
+  name: notebook-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notebook-router
+  template:
+    metadata:
+      labels:
+        app: notebook-router
+    spec:
+      containers:
+        - name: notebook-router
+          image: racelab/depot-router:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--depot-endpoint=http://manager:8888"
+            - "--depot-access-key=$(ACCESS_KEY)"
+          env:
+            - name: ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-keys
+                  key: access_key
+                  optional: false
+          ports:
+            - containerPort: 9995
+          resources:
+            requests:
+              memory: 2000Mi
+              cpu: 500m
+            limits:
+              memory: 2000Mi
+              cpu: 500m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notebook-router
+spec:
+  ports:
+    - port: 9995
+      targetPort: 9995
+  selector:
+    app: notebook-router
+  type: NodePort

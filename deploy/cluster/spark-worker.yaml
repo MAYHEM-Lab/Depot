@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: spark-worker
+  name: spark-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-worker
+  template:
+    metadata:
+      labels:
+        app: spark-worker
+    spec:
+      containers:
+        - name: spark-worker
+          env:
+            - name: SPARK_WORKER_PORT
+              value: "7177"
+          args:
+            - spark://spark-master:7077
+          image: racelab/depot-spark:latest
+          command: ["spark-worker.sh"]
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8081
+            - containerPort: 7177
+          resources:
+            requests:
+              memory: 4000Mi
+              cpu: 1500m
+            limits:
+              memory: 4000Mi
+              cpu: 1500m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always

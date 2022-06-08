@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+cd "$(dirname "${BASH_SOURCE[0]}")"
+script=$(basename $0)
+
+service="http://localhost:8888"
+access_key=""
+
+function request() {
+  url="$service/api/clusters/$entity/$cluster$1"
+  method="$2"
+  body="$3"
+  expected_code="$4"
+  if [[ -n "$body" ]]; then
+    response=$(curl -s -w "\n%{http_code}" -X"$method" "$url" -H"Content-Type: application/json" -H"access_key: $access_key" -d "$body")
+  else
+    response=$(curl -s -w "\n%{http_code}" -X"$method" "$url" -H"access_key: $access_key");
+  fi
+  http_code=$(tail -n1 <<< "$response")
+  content=$(sed '$ d' <<< "$response")
+  [[ "$http_code" -ne expected_code ]] && echo "Unable to request Depot. Check your access key." >&2 && exit 1;
+}
+
+cmd_help() {
+  echo "Usage: $script [options] <command> [args...]"
+  echo "Options:"
+  echo "    -k KEY                                  Depot admin access key"
+  echo "    -s SVC                                  Depot API host and port"
+  echo "Commands:"
+  echo "    list   <entity>                         List cluster names for an entity"
+  echo "    info   <entity> <cluster-name>          Display information about an existing cluster"
+  echo "    create <entity> <cluster-name>          Create a new cluster for an entity"
+  echo "    delete <entity> <cluster-name>          Delete an existing cluster for an entity"
+}
+
+cmd_list() {
+  [ -z "$1" ] && echo 'Entity name position argument is required' >&2 && exit 1
+  entity="$1"
+  cluster=""
+  request '' 'GET' '' 200
+  echo "$content" | jq ".clusters[].cluster.tag"
+}
+
+cmd_info() {
+  [ -z "$1" ] && echo 'Entity name position argument is required' >&2 && exit 1
+  [ -z "$2" ] && echo 'Cluster name position argument is required' >&2 && exit 1
+
+  entity="$1"
+  cluster="$2"
+
+  namespace="cluster-$entity-$cluster"
+
+  echo "Loading pods in namespace $namespace"
+  kubectl get -n "$namespace" pods -o wide
+
+  request '' 'GET' '' 200
+  echo "$content" | jq
+}
+
+cmd_delete() {
+  [ -z "$1" ] && echo 'Entity name position argument is required' >&2 && exit 1
+  [ -z "$2" ] && echo 'Cluster name position argument is required' >&2 && exit 1
+
+  entity="$1"
+  cluster="$2"
+
+  namespace="cluster-$entity-$cluster"
+
+  echo "Deleting Kubernetes namespace"
+  kubectl delete namespace "$namespace"
+
+  echo "Deleting cluster entry"
+  request '' 'DELETE' '' 204
+  echo "$http_code - $content"
+}
+
+cmd_create() {
+  [ -z "$1" ] && echo 'Entity name position argument is required' >&2 && exit 1
+  [ -z "$2" ] && echo 'Cluster name position argument is required' >&2 && exit 1
+
+  entity="$1"
+  cluster="$2"
+
+  echo "Creating cluster entry"
+  request '' 'POST' '' 201
+  echo "$http_code: $content"
+
+  request '/token' 'GET' '' 200
+  cluster_token="$content"
+
+  namespace="cluster-$entity-$cluster"
+
+  spark="{\"spark_master\": \"spark-master.$namespace:7077\"}"
+  nbook="{\"notebook_master\": \"notebook-executor.$namespace:9998\"}"
+  trans="{\"transformer\": \"transformer.$namespace:9994\"}"
+  payload="{\"spark_info\": $spark, \"notebook_info\": $nbook, \"transformer_info\": $trans}"
+  echo $payload
+
+  echo "Creating Kubernetes namespace and secrets"
+  kubectl create namespace "$namespace"
+  kubectl create secret -n "$namespace" generic cluster-credentials --from-literal=token="$cluster_token"
+
+  echo "Creating Kubernetes deployments and services"
+  kubectl apply -n "$namespace" -f spark-master.yaml
+  kubectl apply -n "$namespace" -f spark-worker.yaml
+  kubectl apply -n "$namespace" -f notebook-executor.yaml
+  kubectl apply -n "$namespace" -f transformer.yaml
+
+  echo "Waiting for pods to be Ready"
+  kubectl wait -n "$namespace" --for=condition=Ready pods --all --timeout=200s
+
+  echo "Finalizing cluster"
+  request '' 'PATCH' "$payload" '' 204
+  echo "$http_code"
+  echo "$namespace"
+}
+
+while getopts ":k:s:" o; do
+    case "${o}" in
+        k)
+            access_key=${OPTARG}
+            ;;
+        s)
+            service=${OPTARG}
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+subcommand=$1
+case $subcommand in
+    "" | "-h" | "--help")
+        cmd_help
+        ;;
+    *)
+        shift
+        cmd=cmd_${subcommand}
+        if [[ $(type -t $cmd) != function ]]; then
+          echo "Unrecognized command: $subcommand" >&2
+          exit 1
+        fi
+        $cmd $@
+        ;;
+esac

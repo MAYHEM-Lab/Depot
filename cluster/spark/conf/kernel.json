@@ -1,0 +1,12 @@
+{
+ "argv": [
+  "/opt/depot-kernel/depot_kernel.py",
+  "-f",
+  "{connection_file}"
+ ],
+ "display_name": "Python 3 (depot)",
+ "language": "python",
+ "metadata": {
+  "debugger": true
+ }
+}

@@ -1,0 +1,35 @@
+.login-loader {
+    display: inline-flex;
+    padding: 0 1.6em -0 1.6em;
+}
+
+.account-dropdown {
+}
+
+.user-button {
+    cursor: pointer;
+    background-color: rgb(241, 251, 252);
+    padding: 0.2em 0.7em 0.2em 0.5em;
+}
+
+.login-button {
+    cursor: pointer;
+    background-color: rgb(241, 251, 252);
+    padding: 0.2em 0.7em 0.2em 0.5em;
+}
+
+.login-button:hover {
+    background-color: rgb(210, 243, 246);
+}
+
+.account-info {
+    font-size: 16px;
+    position: absolute;
+    right: 52%;
+    top: 25px;
+}
+
+.registration-button {
+    cursor: pointer;
+    text-decoration: none;
+}

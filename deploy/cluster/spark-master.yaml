@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: spark-master
+  name: spark-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-master
+  template:
+    metadata:
+      labels:
+        app: spark-master
+    spec:
+      hostname: spark-master
+      containers:
+        - name: spark-master
+          env:
+            - name: SPARK_MASTER_PORT
+              value: "7077"
+          image: racelab/depot-spark:latest
+          command: ["spark-master.sh"]
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+            - containerPort: 7077
+          resources:
+            requests:
+              memory: 3000Mi
+              cpu: 1000m
+            limits:
+              memory: 3000Mi
+              cpu: 1000m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-master
+spec:
+  clusterIP: None
+  ports:
+    - name: spark
+      port: 7077
+      targetPort: 7077
+    - name: webui
+      port: 8080
+      targetPort: 8080
+  selector:
+    app: spark-master

@@ -1,0 +1,100 @@
+#dataset-code {
+    flex: 1 1 auto;
+    height: 100%;
+}
+
+.dataset-code-readonly {
+    cursor: default !important;
+}
+
+.dataset-item {
+    height: 100%;
+}
+
+.p-BoxPanel {
+    height: 100%;
+}
+
+.dataset-header {
+    display: flex;
+}
+
+.dataset-buttons {
+    float: right;
+}
+
+.dataset-description {
+    font-size: 15px;
+    font-style: italic;
+    color: lightslategray;
+}
+
+.resource-divider {
+    padding-left: 5px;
+    padding-right: 5px;
+}
+
+.dataset-sample-container {
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+.dataset-lineage-container {
+    cursor: all-scroll;
+    height: 250px;
+    background-color: #e3e3e3;
+}
+
+.dataset-lineage-node {
+    cursor: pointer !important;
+}
+
+.dataset-lineage-edge {
+    cursor: pointer !important;
+}
+
+.dataset-lineage-handle {
+    visibility: hidden;
+}
+
+.dataset-segment-listing {
+    cursor: pointer;
+}
+
+.dataset-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.dataset-manage-tab {
+    background-color: #ffe6ed !important;
+}
+
+.dataset-manage-tab:hover {
+    background-color: #ffc0c0 !important;
+}
+.dataset-manage-tab.active {
+    background-color: #ffc0c0 !important;
+}
+
+.segment-info-container {
+    padding-top: 10px;
+}
+
+.segment-history-entry {
+    display: flex;
+    align-items: center;
+}
+
+.segment-history-state {
+}
+
+.segment-history-date {
+    padding-right: 15px;
+    font-size: 15px;
+}
+
+.segment-history-description {
+    margin-left: 10px;
+    padding-bottom: 10px;
+}

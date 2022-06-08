@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: manager
+  name: manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: manager
+  template:
+    metadata:
+      labels:
+        app: manager
+    spec:
+      containers:
+        - name: manager
+          image: racelab/depot-manager:latest
+          imagePullPolicy: Always
+          args:
+            - "-jwt.secret=$(JWT_SECRET)"
+            - "-admin.access_key=$(ACCESS_KEY)"
+            - "-oauth.github.client_id=$(GITHUB_CLIENT_ID)"
+            - "-oauth.github.client_secret=$(GITHUB_CLIENT_SECRET)"
+            - "-euca.admin.access_key=$(CLOUD_ACCESS_KEY)"
+            - "-euca.admin.secret_key=$(CLOUD_SECRET_KEY)"
+            - "-deployment.id=k8s"
+            - "-mysql.host=$(MYSQL_HOST)"
+            - "-mysql.username=$(MYSQL_USERNAME)"
+            - "-mysql.password=$(MYSQL_PASSWORD)"
+            - "-rabbitmq.host=$(RABBITMQ_HOST)"
+            - "-rabbitmq.username=$(RABBITMQ_USERNAME)"
+            - "-rabbitmq.password=$(RABBITMQ_PASSWORD)"
+          env:
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-keys
+                  key: jwt_secret
+                  optional: false
+            - name: ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: auth-keys
+                  key: access_key
+                  optional: false
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: client_id
+                  optional: false
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: github-credentials
+                  key: client_secret
+                  optional: false
+            - name: MYSQL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: host
+                  optional: false
+            - name: MYSQL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: username
+                  optional: false
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: password
+                  optional: false
+            - name: CLOUD_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-credentials
+                  key: access_key
+                  optional: false
+            - name: CLOUD_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-credentials
+                  key: secret_key
+                  optional: false
+            - name: RABBITMQ_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: host
+                  optional: false
+            - name: RABBITMQ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+                  optional: false
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+                  optional: false
+          ports:
+            - containerPort: 8888
+          resources:
+            requests:
+              memory: 4000Mi
+              cpu: 1500m
+            limits:
+              memory: 4000Mi
+              cpu: 1500m
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manager
+spec:
+  type: NodePort
+  selector:
+    app: manager
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8888
+      targetPort: 8888
