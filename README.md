@@ -29,6 +29,7 @@ cd Depot
 ```shell script
 sbt docker
 ```
+The resulting images will be made available in the local Docker image repostiory with the prefix `racelab/depot-`.
 
 ## Deployment
 Depot integrates tightly with a Eucalyptus cloud environment to manage storage and access control policies and as such requires administrative access to a Eucalyptus deployment. It does not yet support running on other cloud providers or baremetal out-of-the-box.
@@ -204,4 +205,4 @@ User clusters are managed with Depot's `clusterctl` tool.
 ```shell script
 ./deploy/cluster/clusterctl -k <key> -s <endpoint> create <entity> <cluster-name>
 ```
-4. The created cluster's Spark capacity can be managed by modifying the `spark-worker` deployment. 
+4. The created cluster's Spark capacity can be managed by modifying the `spark-worker` deployment in the cluster's namespace.
