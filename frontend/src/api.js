@@ -151,7 +151,7 @@ export default {
                 }
             }),
             isolated: isolated,
-            schedule: `${frequency}.minutes`
+            schedule: frequency
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',

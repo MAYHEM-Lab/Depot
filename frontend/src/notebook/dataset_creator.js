@@ -139,7 +139,7 @@ class DatasetCreator extends Component {
                 visibility,
                 touchedDatasets,
                 !triggered,
-                parseInt(frequency)
+                frequency ? `${parseInt(frequency)}.minutes` : null
             )
             this.setState({createdTag: tag})
         } finally {

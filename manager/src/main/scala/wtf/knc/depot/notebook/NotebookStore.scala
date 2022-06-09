@@ -1,7 +1,7 @@
 package wtf.knc.depot.notebook
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.twitter.util.Future
+import com.twitter.util.{Await, Future, FuturePool}
 import com.twitter.util.jackson.ScalaObjectMapper
 import javax.inject.{Inject, Singleton}
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
@@ -26,17 +26,20 @@ trait NotebookStore {
 @Singleton
 class CloudNotebookStore @Inject() (
   objectMapper: ScalaObjectMapper,
-  s3: RestS3Service
+  s3: RestS3Service,
+  s3Pool: FuturePool
 ) extends NotebookStore {
   private final val NotebookDir = "depot.notebooks"
-  s3.createBucket(NotebookDir)
+  Await.result {
+    s3Pool { s3.createBucket(NotebookDir) }
+  }
 
-  override def get(tag: String): Future[NotebookContents] = Future {
+  override def get(tag: String): Future[NotebookContents] = s3Pool {
     val data = s3.getObject(NotebookDir, tag).getDataInputStream
     objectMapper.parse[NotebookContents](data)
   }
 
-  override def save(tag: String, contents: NotebookContents): Future[Unit] = Future {
+  override def save(tag: String, contents: NotebookContents): Future[Unit] = s3Pool {
     val s3Object = new S3Object(tag, objectMapper.writeValueAsBytes(contents))
     s3.putObject(NotebookDir, s3Object)
   }

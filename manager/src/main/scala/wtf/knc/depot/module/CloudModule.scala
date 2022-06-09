@@ -8,6 +8,7 @@ import com.twitter.inject.TwitterModule
 import com.twitter.inject.annotations.Flag
 import com.twitter.util.FuturePool
 import javax.inject.Singleton
+import org.apache.http.impl.NoConnectionReuseStrategy
 import org.apache.http.impl.client.HttpClients
 import org.jets3t.service.Jets3tProperties
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
@@ -71,7 +72,10 @@ object CloudModule extends TwitterModule {
     props.setProperty("s3service.disable-dns-buckets", "true");
     props.setProperty("storage-service.request-signature-version", "AWS2");
     val s3 = new RestS3Service(new AWSCredentials(adminAccessKey, adminSecretKey), null, null, props)
-    val httpClient = HttpClients.createDefault()
+    val httpClient = HttpClients
+      .custom()
+      .setConnectionReuseStrategy(new NoConnectionReuseStrategy)
+      .build()
     onExit(httpClient.close())
     s3.setHttpClient(httpClient)
     s3
