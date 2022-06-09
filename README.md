@@ -81,6 +81,8 @@ git clone https://github.com/MAYHEM-Lab/Depot
 ```
 3. Run the MySQL installation script as root.
 ```shell script
+cd Depot
+chmod 750 ./deploy/platform/mysql/install.sh
 sudo ./deploy/platform/mysql/install.sh
 ```
 4. Keep track of the MySQL credentials output at the end.
