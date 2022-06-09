@@ -58,7 +58,7 @@ eulb-create-lb -l "lb-port=80, protocol=HTTP, instance-port=30080, instance-prot
 ```
 2. Provision Ubuntu 20.04 VMs. This example provisions 6 instances.
 ```shell script
-euca-run-instances emi-0222560f -t m1.large -n 6 -k <key-pair>
+euca-run-instances emi-0222560f -t m1.large -n 6 -k <key-pair> -z <ZONE>
 ```
 3. Wait until all instances are reported as `running` via `euca-describe-instances`
 4. Select one instance for MySQL, one instance for RabbitMQ, and the rest to form the Kubernetes cluster. These instances can be named with a user-friendly name for convenience:
