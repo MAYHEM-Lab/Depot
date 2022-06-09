@@ -78,7 +78,7 @@ object GithubModule extends TwitterModule {
 
 private trait HttpsClientModuleTrait extends HttpClientModuleTrait {
   val serverHost: String
-  override val dest: String = s"$serverHost:443"
+  override lazy val dest: String = s"$serverHost:443"
 
   override def defaultHeaders: Map[String, String] = Map(
     Fields.Accept -> MediaType.Json,
@@ -93,7 +93,7 @@ private trait HttpsClientModuleTrait extends HttpClientModuleTrait {
 
 private object GithubApiModule extends HttpsClientModuleTrait {
   override val serverHost = "api.github.com"
-  override def label: String = "github-api"
+  override val label: String = "github-api"
 
   @Provides
   @Singleton
