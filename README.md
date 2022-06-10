@@ -1,4 +1,4 @@
-# Depot
+# [Depot](https://github.com/MAYHEM-Lab/Depot)
 Depot is an open-source collaborative data platform with the objective of facilitating cross-organizational
 creation, distribution, and consumption of dynamic digital assets. 
 
