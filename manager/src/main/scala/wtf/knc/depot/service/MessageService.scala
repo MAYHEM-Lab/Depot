@@ -9,6 +9,7 @@ import wtf.knc.depot.message.{Message, Subscriber}
 class MessageService @Inject() (
   transitionHandler: TransitionHandler,
   scheduleHandler: ScheduleHandler,
+  retentionHandler: RetentionHandler,
   subscriber: Subscriber
 ) extends Logging
   with Closable {
@@ -17,8 +18,10 @@ class MessageService @Inject() (
   private val subscription = subscriber.subscribe {
     case Message.SegmentTransition(segmentId, transition) =>
       transitionHandler.handleTransition(segmentId, transition)
-    case Message.DatasetSchedule(datasetId) =>
-      scheduleHandler.handleSchedule(datasetId)
+    case Message.DatasetSchedule(datasetId, updatedAt) =>
+      scheduleHandler.handleSchedule(datasetId, updatedAt)
+    case Message.DatasetPrune(datasetId, updatedAt) =>
+      retentionHandler.checkRetention(datasetId, updatedAt)
     case msg => Future.exception(new Exception(s"Unrecognized message: $msg"))
   }
 

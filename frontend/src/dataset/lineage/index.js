@@ -27,7 +27,7 @@ const nodeTypes = {dataset: DataNode}
 export default function DataGraph({graphPromise, renderLink, renderNode, getNodeId, centerId}) {
     const [graph, setGraph] = useState(null)
     useEffect(() => {
-        graphPromise.then(result => {
+        graphPromise().then(result => {
             const nodes = []
             const edges = []
             const loop = (entry, parent = null, x = 0, y = 0,) => {
@@ -71,7 +71,7 @@ export default function DataGraph({graphPromise, renderLink, renderNode, getNode
             loop(result)
             setGraph({nodes: nodes, edges: edges})
         })
-    }, [graphPromise])
+    }, [centerId])
 
     return (
         <Container className='dataset-lineage-container'>

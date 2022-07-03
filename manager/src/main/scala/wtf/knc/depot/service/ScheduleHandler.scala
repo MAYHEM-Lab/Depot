@@ -1,7 +1,7 @@
 package wtf.knc.depot.service
 
 import com.twitter.inject.Logging
-import com.twitter.util.Future
+import com.twitter.util.{Duration, Future, Time}
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.dao.{DatasetDAO, GraphDAO, SegmentDAO}
 import wtf.knc.depot.message.{Message, Publisher}
@@ -22,7 +22,7 @@ class ScheduleHandler @Inject() (
       case Some(segment) if segment.state == SegmentState.Announced =>
         logger.info(s"Transitioning segment ${segment.id} of dataset $datasetId to Awaiting")
         publisher
-          .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Scheduled(System.currentTimeMillis))))
+          .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Scheduled(Time.now.inMillis))))
       case _ => Future.Done
     }
   }
@@ -33,7 +33,7 @@ class ScheduleHandler @Inject() (
 
       if (isolated) {
         logger.info(s"Dataset $datasetId is isolated, generating new segment")
-        transitionHandler.createSegment(datasetId, Trigger.Scheduled(System.currentTimeMillis))
+        transitionHandler.createSegment(datasetId, Trigger.Scheduled(Time.now.inMillis))
       } else {
         logger.info(s"Dataset $datasetId is not isolated, not generating new segments")
         Future.Done
@@ -41,15 +41,20 @@ class ScheduleHandler @Inject() (
     }
   }
 
-  def handleSchedule(datasetId: Long): Future[Unit] = {
+  def handleSchedule(datasetId: Long, updatedAt: Long): Future[Unit] = {
     datasetDAO.byId(datasetId).flatMap { dataset =>
-      logger.info(s"Handling schedule timeout for ${dataset.tag} [$datasetId]")
+      if (dataset.updatedAt == updatedAt) {
+        logger.info(s"Handling schedule timeout for ${dataset.tag} [$datasetId]")
 
-      for {
-        _ <- materializeLatest(datasetId)
-        _ <- createNew(datasetId)
-        _ <- dataset.schedule.fold(Future.Done)(publisher.publish(Message.DatasetSchedule(datasetId), _))
-      } yield ()
+        for {
+          _ <- materializeLatest(datasetId)
+          _ <- createNew(datasetId)
+          _ <- dataset.schedule.fold(Future.Done)(publisher.publish(Message.DatasetSchedule(datasetId, updatedAt), _))
+        } yield ()
+      } else {
+        logger.info(s"Ignoring old schedule timeout for ${dataset.tag}")
+        Future.Done
+      }
     }
   }
 }

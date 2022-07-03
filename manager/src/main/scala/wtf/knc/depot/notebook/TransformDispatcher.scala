@@ -2,16 +2,13 @@ package wtf.knc.depot.notebook
 
 import com.twitter.finagle.Http
 import com.twitter.finagle.http.{MediaType, Method, Request, Version}
-import com.twitter.finatra.http.request.ContentType
-import com.twitter.finatra.httpclient.HttpClient
 import com.twitter.inject.Logging
-import com.twitter.io.Reader
 import com.twitter.util.Future
 import com.twitter.util.jackson.ScalaObjectMapper
-import javax.inject.{Inject, Named, Singleton}
+import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.dao.ClusterDAO
-import wtf.knc.depot.notebook.TransformDispatcher._
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
+import wtf.knc.depot.notebook.TransformDispatcher._
 
 object TransformDispatcher {
   case class TransformRequest(

@@ -20,4 +20,6 @@
     </root>
 
     <logger name="wtf.knc" level="DEBUG"/>
+<!--    <logger name="org.jets3t" level="DEBUG"/>-->
+<!--    <logger name="org.apache" level="DEBUG"/>-->
 </configuration>

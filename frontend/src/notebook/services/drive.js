@@ -4,9 +4,10 @@ import {NotebookModel} from "@jupyterlab/notebook/lib/model";
 import {DepotKernel} from "./kernel";
 
 export default class DepotDrive extends Drive {
-    constructor(staticContent) {
+    constructor(staticContent, user) {
         super();
         this.staticContent = staticContent
+        this.user = user
     }
 
     get = async (path) => {
@@ -31,8 +32,7 @@ export default class DepotDrive extends Drive {
                 content: nb.toJSON()
             }
         }
-        const [entity, tag] = path.split('/', 2)
-        const content = await API.readNotebook(entity, tag)
+        const content = await API.readNotebook(this.user.name, path)
         return {
             format: 'json',
             type: 'notebook',

@@ -1,11 +1,11 @@
 package wtf.knc.depot.dao
 
+import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
-import com.twitter.util.{Duration, Future}
 import com.twitter.util.jackson.ScalaObjectMapper
+import com.twitter.util.{Duration, Future, Time}
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.model._
-import com.twitter.conversions.DurationOps._
 
 trait DatasetDAO {
   def byId(datasetId: Long): Future[Dataset]
@@ -15,13 +15,20 @@ trait DatasetDAO {
     tag: String,
     description: String,
     owner: Long,
+    origin: Origin,
     datatype: Datatype,
     visibility: Visibility,
     retention: Option[Duration],
     schedule: Option[Duration],
     clusterAffinity: Option[Long]
   ): Future[Long]
-
+  def update(
+    datasetId: Long,
+    description: String,
+    retention: Option[Duration],
+    schedule: Option[Duration],
+    visibility: Visibility
+  ): Future[Unit]
   def addCollaborator(datasetId: Long, userId: Long, role: Role): Future[Unit]
   def removeCollaborator(datasetId: Long, userId: Long): Future[Unit]
   def collaborators(datasetId: Long): Future[Map[Long, Role]]
@@ -38,6 +45,7 @@ class MysqlDatasetDAO @Inject() (
     r.longOrZero("owner_id"),
     r.stringOrNull("tag"),
     r.stringOrNull("description"),
+    Origin.parse(r.stringOrNull("origin")),
     objectMapper.parse[Datatype](r.stringOrNull("datatype")),
     Visibility.parse(r.stringOrNull("visibility")),
     r.getLong("retention_ms").map(_.toLong.millis),
@@ -80,6 +88,7 @@ class MysqlDatasetDAO @Inject() (
     tag: String,
     description: String,
     owner: Long,
+    origin: Origin,
     datatype: Datatype,
     visibility: Visibility,
     retention: Option[Duration],
@@ -87,17 +96,21 @@ class MysqlDatasetDAO @Inject() (
     clusterAffinity: Option[Long]
   ): Future[Long] =
     client.transaction { tx =>
-      val now = System.currentTimeMillis
+      val now = Time.now.inMillis
+      val columns =
+        "tag, description, owner_id, datatype, origin, visibility, retention_ms, schedule_ms, preferred_cluster, created_at, updated_at"
+      val params = columns.split(',').map(_ => "?").mkString(", ")
       for {
         _ <- tx
           .prepare(
-            "INSERT INTO datasets(tag, description, owner_id, datatype, visibility, retention_ms, schedule_ms, preferred_cluster, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            s"INSERT INTO datasets($columns) VALUES($params)"
           )
           .modify(
             tag,
             description,
             owner,
             objectMapper.writeValueAsString(datatype),
+            origin.name,
             visibility.name,
             retention.map(_.inMillis),
             schedule.map(_.inMillis),
@@ -108,4 +121,24 @@ class MysqlDatasetDAO @Inject() (
         id <- tx.select("SELECT LAST_INSERT_ID() as id")(_.longOrZero("id")).map(_.head)
       } yield id
     }
+
+  override def update(
+    datasetId: Long,
+    description: String,
+    retention: Option[Duration],
+    schedule: Option[Duration],
+    visibility: Visibility
+  ): Future[Unit] = client
+    .prepare(
+      "UPDATE datasets SET description = ?, retention_ms = ?, schedule_ms = ?, visibility = ?, updated_at = ? WHERE id = ?"
+    )
+    .modify(
+      description,
+      retention.map(_.inMillis),
+      schedule.map(_.inMillis),
+      visibility.name,
+      Time.now.inMillis,
+      datasetId
+    )
+    .unit
 }

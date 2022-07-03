@@ -5,7 +5,7 @@ import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.Logging
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.controller.ValidateController.{ValidateRequest, ValidateResponse}
-import wtf.knc.depot.dao.{DatasetDAO, NotebookDAO, EntityDAO}
+import wtf.knc.depot.dao.{DatasetDAO, EntityDAO, NotebookDAO}
 
 object ValidateController {
   case class ValidateRequest(@RouteParam text: String)

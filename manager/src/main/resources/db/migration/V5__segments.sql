@@ -2,7 +2,7 @@ CREATE TABLE segments (
     id BIGINT NOT NULL AUTO_INCREMENT,
     dataset_id BIGINT NOT NULL,
     version BIGINT NOT NULL,
-    state ENUM('Initializing', 'Announced', 'Queued', 'Awaiting', 'Transforming', 'Materialized', 'Failed') NOT NULL,
+    state ENUM('Initializing', 'Announced', 'Queued', 'Awaiting', 'Transforming', 'Materialized', 'Failed', 'Released') NOT NULL,
     created_at BIGINT UNSIGNED NOT NULL,
     updated_at BIGINT UNSIGNED NOT NULL,
 

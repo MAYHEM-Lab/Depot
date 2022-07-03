@@ -37,7 +37,11 @@ function Content() {
                                 <LocationContext.Consumer>
                                     {location => (
                                         <NavigationContext.Consumer>
-                                            {navigator => <NotebookFrame user={user} location={location} navigator={navigator}/>}
+                                            {navigator =>
+                                            user ?
+                                                <NotebookFrame user={user} location={location} navigator={navigator}/>
+                                                : <div>Please log in</div>
+                                            }
                                         </NavigationContext.Consumer>
                                     )}
                                 </LocationContext.Consumer>

@@ -1,10 +1,15 @@
 package wtf.knc.depot.dao
 
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
-import com.twitter.util.Future
 import com.twitter.util.jackson.ScalaObjectMapper
+import com.twitter.util.{Future, Time}
 import javax.inject.{Inject, Singleton}
+import wtf.knc.depot.dao.SegmentDAO.SegmentNotFoundException
 import wtf.knc.depot.model._
+
+object SegmentDAO {
+  case class SegmentNotFoundException(segmentId: Long) extends Exception
+}
 
 trait SegmentDAO extends DAO {
   def byVersion(datasetId: Long, version: Long)(implicit ctx: Ctx = defaultCtx): Future[Option[Segment]]
@@ -13,7 +18,7 @@ trait SegmentDAO extends DAO {
   def inputs(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[SegmentInput]]
   def outputs(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[SegmentInput]]
 
-  def data(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[SegmentData]
+  def data(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Option[SegmentData]]
   def setData(segmentId: Long, data: SegmentData)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def list(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Segment]]
@@ -23,6 +28,8 @@ trait SegmentDAO extends DAO {
 
   def make(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
   def addInputs(segmentId: Long, inputs: Map[String, Long])(implicit ctx: Ctx = defaultCtx): Future[Unit]
+
+  def delete(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def transitions(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Map[Long, Transition]]
   def recordTransition(segmentId: Long, transition: Transition)(implicit ctx: Ctx = defaultCtx): Future[Unit]
@@ -87,10 +94,10 @@ class MysqlSegmentDAO @Inject() (
       .select(segmentId)(extractInput)
   }
 
-  override def data(segmentId: Long)(implicit ctx: MysqlCtx): Future[SegmentData] = ctx { tx =>
+  override def data(segmentId: Long)(implicit ctx: MysqlCtx): Future[Option[SegmentData]] = ctx { tx =>
     tx.prepare("SELECT * FROM segment_data WHERE segment_id = ?")
       .select(segmentId)(extractData)
-      .map(_.head)
+      .map(_.headOption)
   }
 
   override def setData(segmentId: Long, data: SegmentData)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
@@ -114,7 +121,7 @@ class MysqlSegmentDAO @Inject() (
   }
 
   override def make(datasetId: Long)(implicit ctx: MysqlCtx): Future[Long] = ctx { tx =>
-    val now = System.currentTimeMillis
+    val now = Time.now.inMillis
     tx.prepare("SELECT CAST(MAX(version) AS UNSIGNED INTEGER) AS max_version FROM segments WHERE dataset_id = ?")
       .select(datasetId)(_.longOrZero("max_version"))
       .map(_.head)
@@ -156,13 +163,19 @@ class MysqlSegmentDAO @Inject() (
       .map(_.toMap)
   }
 
+  override def delete(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit] = ctx { tx =>
+    tx.prepare("DELETE FROM segments WHERE id = ?")
+      .modify(segmentId)
+      .unit
+  }
+
   def recordTransition(segmentId: Long, transition: Transition)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
     tx
       .prepare("INSERT INTO segment_transitions(segment_id, transition, created_at) VALUES(?, ?, ?)")
       .modify(
         segmentId,
         objectMapper.writeValueAsString(transition),
-        System.currentTimeMillis
+        Time.now.inMillis
       )
       .unit
   }
@@ -177,11 +190,11 @@ class MysqlSegmentDAO @Inject() (
       currentState <- session
         .prepare("SELECT state FROM segments WHERE id = ?")
         .select(segmentId)(r => SegmentState.parse(r.stringOrNull("state")))
-        .map(_.head)
+        .map(_.headOption.getOrElse(throw SegmentNotFoundException(segmentId)))
       _ <- session.transaction { tx =>
         tx
-          .prepare("UPDATE segments SET state = ? WHERE id = ?")
-          .modify(to.name, segmentId)
+          .prepare("UPDATE segments SET state = ?, updated_at = ? WHERE id = ?")
+          .modify(to.name, Time.now.inMillis, segmentId)
           .unit
           .before(fx(MuxMysqlCtx(tx))(currentState, to))
       }

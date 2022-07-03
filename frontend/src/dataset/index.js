@@ -18,6 +18,11 @@ export default function DatasetHeader() {
     const [dataset, setDataset] = useState(null)
     const [failed, setFailed] = useState(null)
     const [owner, setOwner] = useState(null)
+    const [renderVersion, setRenderVersion] = useState(0)
+
+    const invalidate = () => {
+        setRenderVersion(renderVersion + 1)
+    }
 
     useEffect(async () => {
         setDataset(null)
@@ -36,7 +41,7 @@ export default function DatasetHeader() {
             setFailed(ex)
         }
 
-    }, [user, datasetTag])
+    }, [user, datasetTag, renderVersion])
 
     if (failed) return <Error/>
     if (dataset === null || dataset.tag !== datasetTag || owner === null) return <Loader active/>
@@ -100,6 +105,7 @@ export default function DatasetHeader() {
                     <Link to={`/${entity.name}/${dataset.tag}`}>{dataset.tag}</Link>
                 </Header.Content>
                 <VisibilityInfo dataset={dataset} entity={entity}/>
+                <Header.Subheader>Managed</Header.Subheader>
             </Header>
             <Tab
                 menu={{secondary: true}}
@@ -108,7 +114,7 @@ export default function DatasetHeader() {
                 panes={panes}
             />
             <Divider/>
-            <Outlet context={{entity: entity, dataset: dataset}}/>
+            <Outlet context={{entity: entity, dataset: dataset, owner: owner, invalidate: invalidate}}/>
         </Container>
     )
 }

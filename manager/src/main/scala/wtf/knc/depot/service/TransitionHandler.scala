@@ -7,9 +7,10 @@ import com.twitter.finagle.util.DefaultTimer
 import com.twitter.inject.Logging
 import com.twitter.util.Future
 import javax.inject.{Inject, Singleton}
+import wtf.knc.depot.dao.SegmentDAO.SegmentNotFoundException
 import wtf.knc.depot.dao._
 import wtf.knc.depot.message.{Message, Publisher}
-import wtf.knc.depot.model.{InputMode, SegmentState, Transition, Trigger}
+import wtf.knc.depot.model.{InputMode, SegmentData, SegmentState, Transition, Trigger}
 import wtf.knc.depot.notebook.TransformDispatcher
 
 @Singleton
@@ -28,6 +29,12 @@ class TransitionHandler @Inject() (
 
   def createSegment(datasetId: Long, trigger: Trigger): Future[Unit] = {
     generateNewSegment(datasetId, trigger)(segmentDAO.defaultCtx)
+  }
+
+  def uploadSegment(datasetId: Long, data: SegmentData): Future[Unit] = {
+    segmentDAO.make(datasetId)(segmentDAO.defaultCtx).flatMap { segmentId =>
+      requestTransition(segmentId, Transition.Materialize(data))
+    }
   }
 
   def handleTransition(segmentId: Long, transition: Transition): Future[Unit] = {
@@ -82,7 +89,7 @@ class TransitionHandler @Inject() (
       }
       .onSuccess { _ => logger.info(s"Handled transition request for $segmentId: $transition") }
       .onFailure { ex => logger.error(s"Failed to handle transition request for $segmentId: $transition", ex) }
-      .rescue { case InvalidTransitionException() =>
+      .rescue { case _: InvalidTransitionException | _: SegmentNotFoundException =>
         Future.Done
       }
   }
@@ -117,7 +124,8 @@ class TransitionHandler @Inject() (
 
     node.flatMap {
       case (segment, Some(notebookId), dataset, Some(owner), Some(cluster)) =>
-        val path = cloudService.allocatePath(owner, dataset, segment)
+        val (bucket, key) = cloudService.allocatePath(owner, dataset, segment)
+        val path = s"s3a://$bucket/$key"
         val transformationId = UUID.randomUUID().toString
         logger.info(
           s"Dispatching transformation [$transformationId] in ${owner.name}/${cluster.tag} to generate ${owner.name}/${dataset.tag}@${segment.version}"

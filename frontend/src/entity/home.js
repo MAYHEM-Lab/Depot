@@ -7,10 +7,13 @@ import ListNotebooks from "../notebook/list";
 import ListOrganizations from "../orgs/list";
 import OrganizationCreator from "../orgs/creator";
 import API from "../api";
+import DatasetUploader from "../dataset/uploader";
 
 export default function Home() {
     const user = useContext(UserContext)
     const [creatingOrg, setCreatingOrg] = useState(false)
+    const [creatingDataset, setCreatingDataset] = useState(false)
+    const [trigger, incrTrigger] = useState(0)
 
     const [searchParams] = useSearchParams()
     const view = searchParams.get('view')
@@ -18,7 +21,19 @@ export default function Home() {
 
     if (view === 'datasets') {
         return <>
-            <Header>My Datasets</Header>
+            <Header>
+                My Datasets
+                <Button size='small' positive floated='right' onClick={() => setCreatingDataset(true)}>Upload dataset</Button>
+            </Header>
+            <DatasetUploader
+                open={creatingDataset}
+                onClose={() => setCreatingDataset(false)}
+                onCreate={async (owner, tag, description, datatype, visibility) => {
+                    await API.createUnmanagedDataset(owner, tag, description, datatype, visibility)
+                    setCreatingDataset(false)
+                    incrTrigger(trigger + 1)
+                }}
+            />
             <ListDatasets entity={user}/>
         </>
     } else if (view === 'notebooks') {
@@ -38,9 +53,10 @@ export default function Home() {
                 onCreate={async (tag) => {
                     await API.createOrganization(tag)
                     setCreatingOrg(false)
+                    incrTrigger(trigger + 1)
                 }}
             />
-            <ListOrganizations/>
+            <ListOrganizations trigger={trigger}/>
         </>
     } else if (view === 'clusters') {
         return <>

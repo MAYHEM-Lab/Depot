@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Container, Loader, Table} from "semantic-ui-react";
+import {Container, List, Loader, Tab, Table} from "semantic-ui-react";
 import API from "../api";
 
 const renderTable = (columns, sample) => {
@@ -21,7 +21,9 @@ const renderTable = (columns, sample) => {
                             <Table.Row key={idx}>
                                 {
                                     row.map((elem, idx) =>
-                                        <Table.Cell key={idx}><code>{elem}</code></Table.Cell>
+                                        <Table.Cell key={idx}>
+                                            <code>{elem}</code>
+                                        </Table.Cell>
                                     )
                                 }
                             </Table.Row>
@@ -33,8 +35,28 @@ const renderTable = (columns, sample) => {
     )
 }
 
-const renderRaw = () => {
-    return (<span>This dataset has raw data</span>)
+const renderRaw = (sample) => {
+    const panes = sample.map(([file, ...data]) => {
+            return {
+                menuItem: file,
+                render: () => <Tab.Pane>
+                    <List ordered>
+                        {data.map((line, idx) => {
+                            return <List.Item key={idx}><pre className='file-preview-line'>{line}</pre></List.Item>
+                        })}
+                    </List>
+                </Tab.Pane>
+            }
+        }
+    )
+    return !sample.length ?
+        <Table>
+            <Table.Body>
+                <Table.Row><Table.Cell error textAlign='center'>There are not yet any materialized samples for this dataset.</Table.Cell></Table.Row>
+            </Table.Body>
+        </Table> :
+        <Tab panes={panes}/>
+
 }
 
 export default function DatasetSample({entity, dataset}) {
@@ -50,7 +72,7 @@ export default function DatasetSample({entity, dataset}) {
         if (dataset.datatype.type === 'Table') {
             return renderTable(dataset.datatype.columns, sample)
         } else {
-            return renderRaw()
+            return renderRaw(sample)
         }
     }
 }

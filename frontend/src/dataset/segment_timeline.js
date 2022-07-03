@@ -1,12 +1,13 @@
 import React, {useEffect, useState} from 'react';
-import {useOutletContext, useParams} from "react-router-dom";
+import {Link, useOutletContext, useParams} from "react-router-dom";
 
 import util from '../util'
 import API from '../api'
 import {Feed, Loader} from "semantic-ui-react";
 import SegmentState from "./segment_state";
 
-function Trigger({type}) {
+async function Trigger(trigger) {
+    const {type} = trigger
     if (type === 'Creation') {
         return 'Triggered by creation of dataset'
     }
@@ -14,7 +15,8 @@ function Trigger({type}) {
         return 'Triggered by schedule'
     }
     if (type === 'Manual') {
-        return 'Triggered manually'
+        const user = await API.getEntityById(trigger.who)
+        return <>{'Triggered manually by '}<Link to={`/${user.name}`}>{user.name}</Link></>
     }
     if (type === 'Upstream') {
         return 'Triggered by upstream segment'
@@ -25,17 +27,15 @@ function Trigger({type}) {
     return null;
 }
 
-function Announced({payload}) {
-    const {trigger} = payload
+async function Announced({trigger}) {
     return Trigger(trigger)
 }
 
-function Awaiting({payload}) {
-    const {trigger} = payload
+async function Awaiting({trigger}) {
     return Trigger(trigger)
 }
 
-function Unknown() {
+async function Unknown() {
     return null
 }
 
@@ -48,17 +48,22 @@ export default function SegmentTimeline() {
     const {version} = useParams()
     const {entity, dataset} = useOutletContext();
     const [history, setHistory] = useState(null)
-    useEffect(() => {
-        API.getHistory(entity.name, dataset.tag, version).then(history => setHistory(history));
+    useEffect(async () => {
+        const timeline = await API.getHistory(entity.name, dataset.tag, version)
+
+        const history = Object.keys(timeline).sort().map(async (time) => {
+            const transition = timeline[time]
+            const message = await (transitions[transition.to] || Unknown)(transition)
+            return {time: time, message: message, ...transition}
+        })
+        setHistory(await Promise.all(history))
     }, [entity, dataset, version])
 
 
     return <div>
         {!history ? <Loader active/> :
             <Feed>
-                {Object.keys(history).sort().map((time) => {
-                    const data = history[time]
-                    const Element = transitions[data.to] || Unknown
+                {history.map(({time, to, message}) => {
                     return <Feed.Event key={time + '-label'}>
                         <Feed.Content>
                             <Feed.Date>
@@ -67,12 +72,12 @@ export default function SegmentTimeline() {
                                         {util.formatTime(parseInt(time))}
                                     </div>
                                     <div className='segment-history-state'>
-                                        <SegmentState segmentState={data.to}/>
+                                        <SegmentState segmentState={to}/>
                                     </div>
                                 </div>
                             </Feed.Date>
                             <div className='segment-history-description'>
-                                <Element key={time + '-text'} payload={data}/>
+                                {message}
                             </div>
                         </Feed.Content>
                     </Feed.Event>

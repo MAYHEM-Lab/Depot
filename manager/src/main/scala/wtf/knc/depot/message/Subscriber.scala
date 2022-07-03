@@ -42,6 +42,7 @@ class RabbitMQSubscriber @Inject() (
   private def receive(consumer: String, delivery: Delivery): Unit = {
     val seqNo = delivery.getEnvelope.getDeliveryTag
     val bytes = delivery.getBody
+    println(new String(bytes))
     val message = objectMapper.parse[Message](bytes)
     val runHandlers = Future.join(handlers.map(_(message)))
     logger.info(s"Received message $seqNo on $consumer")

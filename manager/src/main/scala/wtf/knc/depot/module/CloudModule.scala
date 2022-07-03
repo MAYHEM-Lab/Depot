@@ -51,7 +51,7 @@ object CloudModule extends TwitterModule {
   @Provides
   @Singleton
   def s3Pool: FuturePool = {
-    val pool = FuturePools.fixedPool("s3-request-pool", 1)
+    val pool = FuturePools.fixedPool("s3-request-pool", 4)
     onExit(pool.executor.shutdown())
     pool
   }
@@ -71,6 +71,7 @@ object CloudModule extends TwitterModule {
     props.setProperty("s3service.https-only", "false");
     props.setProperty("s3service.disable-dns-buckets", "true");
     props.setProperty("storage-service.request-signature-version", "AWS2");
+    props.setProperty("storage-service.disable-live-md5", "true");
     val s3 = new RestS3Service(new AWSCredentials(adminAccessKey, adminSecretKey), null, null, props)
     val httpClient = HttpClients
       .custom()

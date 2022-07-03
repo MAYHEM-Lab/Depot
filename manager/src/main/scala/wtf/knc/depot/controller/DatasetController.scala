@@ -1,12 +1,19 @@
 package wtf.knc.depot.controller
 
-import java.util.UUID
+import java.io.ByteArrayInputStream
+import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.{Date, UUID}
 
-import com.twitter.finagle.http.{Response, Status}
+import com.twitter.finagle.http.{Request, Uri}
 import com.twitter.finatra.http.Controller
 import com.twitter.finatra.http.annotations.RouteParam
+import com.twitter.finatra.http.request.RequestUtils
 import com.twitter.util.{Duration, Future}
 import javax.inject.{Inject, Provider, Singleton}
+import org.jets3t.service.Constants
+import org.jets3t.service.impl.rest.httpclient.RestS3Service
+import org.jets3t.service.model.S3Object
 import wtf.knc.depot.controller.DatasetController._
 import wtf.knc.depot.dao._
 import wtf.knc.depot.message.{Message, Publisher}
@@ -36,10 +43,19 @@ object DatasetController {
     datasetTag: String
   )
 
-  private case class DatasetCreateRequest(
+  private case class CreateUnmanaged(
     @RouteParam entityName: String,
     @RouteParam datasetTag: String,
     description: String,
+    datatype: Datatype,
+    visibility: Visibility
+  ) extends DatasetRoute
+
+  private case class CreateDataset(
+    @RouteParam entityName: String,
+    @RouteParam datasetTag: String,
+    description: String,
+    origin: Origin,
     content: NotebookContents,
     datatype: Datatype,
     visibility: Visibility,
@@ -48,6 +64,15 @@ object DatasetController {
     retention: Option[Duration],
     schedule: Option[Duration],
     clusterAffinity: Option[String]
+  ) extends DatasetRoute
+
+  private case class DatasetUpdate(
+    @RouteParam entityName: String,
+    @RouteParam datasetTag: String,
+    description: String,
+    retention: Option[Duration],
+    schedule: Option[Duration],
+    visibility: Visibility
   ) extends DatasetRoute
 
   private case class ManageResponse(
@@ -138,8 +163,10 @@ class DatasetController @Inject() (
   graphDAO: GraphDAO,
   cloudService: CloudService,
   transitionHandler: TransitionHandler,
-  publisher: Publisher
+  publisher: Publisher,
+  s3: RestS3Service
 ) extends Controller
+  with EntityRequests
   with Authentication {
 
   // Does entity `entityId` have role `role` against dataset `dataset`?
@@ -179,22 +206,16 @@ class DatasetController @Inject() (
     }
   }
 
-  private def withDataset[A <: DatasetRoute](
-    role: Option[Role]
-  )(fn: (A, Dataset) => Future[Response]): A => Future[Response] = withAuth[A] { case (req, auth) =>
-    Future
-      .join(
-        entityDAO.byName(req.entityName),
-        datasetDAO.byTag(req.datasetTag)
-      )
-      .flatMap {
-        case (Some(owner), Some(dataset)) =>
-          lazy val deny = Future.value(response.forbidden)
-          lazy val grant = fn(req, dataset)
-          if (auth.contains(Auth.Admin)) {
+  private def dataset(role: Option[Role])(implicit req: DatasetRoute): Future[Dataset] = entity(None)
+    .flatMap { owner =>
+      datasetDAO.byTag(req.datasetTag).flatMap {
+        case Some(dataset) =>
+          lazy val deny = response.forbidden.toFutureException
+          lazy val grant = Future.value(dataset)
+          if (_client.contains(Auth.Admin)) {
             grant
           } else {
-            auth
+            _client
               .fold[Future[Option[Entity]]](Future.None) {
                 case Auth.Cluster(clusterId) =>
                   clusterDAO.byId(clusterId).flatMap { cluster =>
@@ -207,18 +228,18 @@ class DatasetController @Inject() (
               .flatMap { maybeEntity => authorizeDataset(maybeEntity, role, owner, dataset) }
               .flatMap { if (_) grant else deny }
           }
-        case _ => Future.value(response.notFound)
-      }
-  }
 
-  private def withSegment[A <: SegmentRoute](
-    role: Option[Role]
-  )(fn: (A, Dataset, Segment) => Future[Response]): A => Future[Response] = withDataset[A](role) { (req, dataset) =>
-    segmentDAO.byVersion(dataset.id, req.version).flatMap {
-      case Some(segment) => fn(req, dataset, segment)
-      case _ => Future.value(response.notFound(s"Version ${req.version} does not exist"))
+        case _ => throw response.notFound.toException
+      }
     }
-  }
+
+  private def segment(role: Option[Role])(implicit req: SegmentRoute): Future[Segment] = dataset(role)
+    .flatMap { dataset =>
+      segmentDAO.byVersion(dataset.id, req.version).map {
+        case Some(segment) => segment
+        case _ => throw response.notFound.toException
+      }
+    }
 
   private def convertColumnType(columnType: ColumnType): String = columnType match {
     case ColumnType.String => "STRING"
@@ -239,7 +260,10 @@ class DatasetController @Inject() (
     val (schema, format) = convertDatatype(dataset.datatype)
     val loadPaths = maybeSegment match {
       case Some(segment) if segment.state == SegmentState.Materialized =>
-        segmentDAO.data(segment.id).map(data => Seq(data.path))
+        segmentDAO.data(segment.id).map {
+          case Some(data) => Seq(data.path)
+          case _ => Seq.empty
+        }
       case _ =>
         Future.value(Seq.empty)
     }
@@ -277,21 +301,58 @@ class DatasetController @Inject() (
   }
 
   prefix("/api/entity/:entity_name/datasets") {
-    get("/?") {
-      withEntity[EntityRequest](None) { (_, owner) =>
-        datasetDAO.byOwner(owner.id).map(response.ok)
+    get("/?") { implicit req: EntityRequest =>
+      entity(None).flatMap { owner =>
+        val authFilter: Dataset => Future[Boolean] = _client match {
+          case Some(Auth.User(userId)) =>
+            dataset =>
+              entityDAO.byId(userId).flatMap { maybeEntity =>
+                authorizeDataset(maybeEntity, Some(Role.Member), owner, dataset)
+              }
+          case Some(Auth.Cluster(clusterId)) =>
+            dataset =>
+              clusterDAO.byId(clusterId).flatMap { cluster =>
+                entityDAO.byId(cluster.ownerId).flatMap { maybeEntity =>
+                  authorizeDataset(maybeEntity, Some(Role.Member), owner, dataset)
+                }
+              }
+          case Some(Auth.Admin) => _ => Future.True
+          case _ => authorizeDataset(None, Some(Role.Member), owner, _)
+        }
+
+        datasetDAO.byOwner(owner.id).flatMap { datasets =>
+          val filtered = datasets.map { dataset =>
+            authFilter(dataset).map { if (_) Some(dataset) else None }
+          }
+          Future.collect(filtered).map(_.flatten)
+        }
       }
     }
 
     prefix("/:dataset_tag") {
-      post("/?") {
-        withEntity[DatasetCreateRequest](Some(Role.Owner)) { (req, owner) =>
+
+      post("/?") { implicit req: CreateDataset =>
+        entity(Some(Role.Owner)).flatMap { owner =>
+          if (req.origin == Origin.Unmanaged) {
+            require(req.retention.isEmpty)
+            require(req.clusterAffinity.isEmpty)
+            require(req.schedule.isEmpty)
+            require(req.triggers.isEmpty)
+            require(req.content.isEmpty)
+            // no notebook
+            // no message dispatch
+          }
+
           // TODO: kc - validate dataset info
           val notebookId = UUID.randomUUID().toString.replace("-", "")
           val inputMode = if (req.isolated) InputMode.Ancilla else InputMode.Trigger
 
-          val saveNotebook = notebookDAO.create(notebookId, Entity.Root.id).before {
-            notebookStore.save(notebookId, req.content)
+          val saveNotebook = if (req.origin == Origin.Managed) {
+            notebookDAO.create(notebookId, Entity.Root.id).before {
+              notebookStore.save(notebookId, req.content)
+            }
+          } else {
+            Future.Done
           }
 
           // TODO: kc - can user access these datasets?
@@ -322,6 +383,7 @@ class DatasetController @Inject() (
                   req.datasetTag,
                   req.description,
                   owner.id,
+                  req.origin,
                   req.datatype,
                   req.visibility,
                   req.retention,
@@ -337,17 +399,30 @@ class DatasetController @Inject() (
                       val createEdges = Future.join(inputs.toSeq.map { case (name, (datasetId, inputMode)) =>
                         graphDAO.make(targetDatasetId, datasetId, name, inputMode, valid = true)
                       })
-                      val createSchedule = req.schedule match {
-                        case Some(duration) => publisher.publish(Message.DatasetSchedule(targetDatasetId), duration)
-                        case _ => Future.Done
+                      val dispatchMessages = datasetDAO.byId(targetDatasetId).flatMap { dataset =>
+                        val createSchedule = req.schedule match {
+                          case Some(duration) =>
+                            publisher.publish(Message.DatasetSchedule(targetDatasetId, dataset.updatedAt), duration)
+                          case _ => Future.Done
+                        }
+                        val createPruner = req.retention match {
+                          case Some(retention) =>
+                            publisher.publish(Message.DatasetPrune(targetDatasetId, dataset.updatedAt), retention)
+                          case _ => Future.Done
+                        }
+                        Future.join(createSchedule, createPruner)
                       }
                       val createAcl = datasetDAO.addCollaborator(targetDatasetId, owner.id, Role.Owner)
                       Future
-                        .join(createTransformation, createEdges, createSchedule, createAcl)
+                        .join(createTransformation, createEdges, dispatchMessages, createAcl)
                         .map(_ => targetDatasetId)
                     }
                     .flatMap { _ =>
-                      transitionHandler.createSegment(targetDatasetId, Trigger.Creation(targetDatasetId))
+                      if (req.origin == Origin.Managed) {
+                        transitionHandler.createSegment(targetDatasetId, Trigger.Creation(targetDatasetId))
+                      } else {
+                        Future.Done
+                      }
                     }
                 }
                 .map { _ => response.ok }
@@ -355,27 +430,68 @@ class DatasetController @Inject() (
         }
       }
 
-      get("/manage") { req: DatasetRequest =>
-        val asAdmin = withDataset[DatasetRequest](Some(Role.Owner)) { (_, dataset) =>
-          Future.value(response.ok(dataset))
-        }(req)
-        asAdmin.map { proxy =>
-          if (proxy.status == Status.Ok) {
-            response.ok(ManageResponse(true))
-          } else {
-            response.ok(ManageResponse(false))
-          }
+      get("/?") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).map(response.ok)
+      }
+
+      patch("/?") { implicit req: DatasetUpdate =>
+        dataset(Some(Role.Owner)).flatMap { dataset =>
+          logger.info(s"Handling dataset update for ${dataset.tag}: $req")
+          datasetDAO
+            .update(dataset.id, req.description, req.retention, req.schedule, req.visibility)
+            .before {
+              entityDAO.byId(dataset.ownerId).flatMap {
+                case Some(owner) =>
+                  graphDAO.out(dataset.id).flatMap { edges =>
+                    val downstreams = edges.map { edge =>
+                      logger.info(s"Checking auth status for edge $edge")
+
+                      for {
+                        target <- datasetDAO.byId(edge.targetDatasetId)
+                        maybeEntity <- entityDAO.byId(target.ownerId)
+                        authed <- {
+                          logger.info(s"Checking target dataset ${target.tag}")
+                          authorizeDataset(maybeEntity, Some(Role.Owner), owner, dataset)
+                        }
+                        _ <- {
+                          logger.info(s"Target dataset ${target.tag} access to ${dataset.tag}: $authed")
+                          graphDAO.updateEdge(target.id, dataset.id, edge.binding, authed)
+                        }
+                      } yield ()
+                    }
+                    Future.join(downstreams)
+                  }
+                case _ => throw new Exception(s"Dataset ${dataset.tag} has no owner")
+              }
+            }
+            .before {
+              datasetDAO.byId(dataset.id).flatMap { dataset =>
+                val createSchedule = req.schedule match {
+                  case Some(duration) =>
+                    publisher.publish(Message.DatasetSchedule(dataset.id, dataset.updatedAt), duration)
+                  case _ => Future.Done
+                }
+                val createPruner = req.retention match {
+                  case Some(retention) =>
+                    publisher.publish(Message.DatasetPrune(dataset.id, dataset.updatedAt), retention)
+                  case _ => Future.Done
+                }
+                Future.join(createSchedule, createPruner).unit
+              }
+            }
+            .map(_ => response.noContent)
         }
       }
 
-      get("/?") {
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
-          Future.value(response.ok(dataset))
-        }
+      get("/manage") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Owner))
+          .map { _ => true }
+          .handle { _ => false }
+          .map { a => response.ok(ManageResponse(a)) }
       }
 
-      get("/locate") {
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+      get("/locate") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).flatMap { dataset =>
           segmentDAO.list(dataset.id).flatMap { segments =>
             val materialized = segments.filter(_.state == SegmentState.Materialized)
             locate(materialized.maxByOption(_.version), dataset).map(response.ok)
@@ -383,8 +499,8 @@ class DatasetController @Inject() (
         }
       }
 
-      get("/notebook") {
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+      get("/notebook") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).flatMap { dataset =>
           transformationDAO.get(dataset.id).flatMap {
             case Some(notebookId) => notebookStore.get(notebookId).map(response.ok)
             case _ => Future.value(response.notFound)
@@ -392,8 +508,8 @@ class DatasetController @Inject() (
         }
       }
 
-      get("/stats") {
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+      get("/stats") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).flatMap { dataset =>
           Future
             .join(
               segmentDAO.count(dataset.id),
@@ -403,22 +519,26 @@ class DatasetController @Inject() (
         }
       }
 
-      get("/sample") {
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+      get("/sample") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).flatMap { dataset =>
           segmentDAO.list(dataset.id).flatMap { segments =>
             val lastMaterialized = segments
               .filter(_.state == SegmentState.Materialized)
               .sortBy(_.version)
               .lastOption
             lastMaterialized match {
-              case Some(segment) => segmentDAO.data(segment.id).map(_.sample).map(response.ok)
+              case Some(segment) =>
+                segmentDAO.data(segment.id).map {
+                  case Some(data) => response.ok(data.sample)
+                  case _ => response.notFound
+                }
               case _ => Future.value(response.ok(Seq.empty))
             }
           }
         }
       }
 
-      get("/lineage") {
+      get("/lineage") { implicit req: DatasetRequest =>
         def parents(dataset: Dataset): Future[LineageResponse] = {
           graphDAO.in(dataset.id).flatMap { edges =>
             val upstreams = edges.map { edge =>
@@ -449,14 +569,14 @@ class DatasetController @Inject() (
           }
         }
 
-        withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+        dataset(Some(Role.Member)).flatMap { dataset =>
           parents(dataset).map(response.ok)
         }
       }
 
       prefix("/collaborators") {
-        get("/?") {
-          withDataset[DatasetRequest](Some(Role.Owner)) { (_, dataset) =>
+        get("/?") { implicit req: DatasetRequest =>
+          dataset(Some(Role.Owner)).flatMap { dataset =>
             datasetDAO.collaborators(dataset.id).flatMap { collabs =>
               val loadCollabs = collabs.map { case (id, role) =>
                 entityDAO.byId(id).map {
@@ -471,8 +591,8 @@ class DatasetController @Inject() (
           }
         }
 
-        delete("/?") {
-          withDataset[RemoveCollaborator](Some(Role.Owner)) { (req, dataset) =>
+        delete("/?") { implicit req: RemoveCollaborator =>
+          dataset(Some(Role.Owner)).flatMap { dataset =>
             entityDAO.byName(req.collaboratorName).flatMap {
               case Some(entity) =>
                 if (entity.id == dataset.ownerId) {
@@ -487,8 +607,8 @@ class DatasetController @Inject() (
           }
         }
 
-        post("/?") {
-          withDataset[AddCollaborator](Some(Role.Owner)) { (req, dataset) =>
+        post("/?") { implicit req: AddCollaborator =>
+          dataset(Some(Role.Owner)).flatMap { dataset =>
             entityDAO.byName(req.collaboratorName).flatMap {
               case Some(entity) =>
                 cloudService.addDatasetACL(entity.name, req.entityName, req.datasetTag).before {
@@ -501,21 +621,19 @@ class DatasetController @Inject() (
       }
 
       prefix("/segments") {
-        get("/?") {
-          withDataset[DatasetRequest](Some(Role.Member)) { (_, dataset) =>
+        get("/?") { implicit req: DatasetRequest =>
+          dataset(Some(Role.Member)).flatMap { dataset =>
             segmentDAO.list(dataset.id).map(response.ok)
           }
         }
 
         prefix("/:version") {
-          get("/?") {
-            withSegment[DatasetVersionRequest](Some(Role.Member)) { (_, _, segment) =>
-              Future.value(response.ok(segment))
-            }
+          get("/?") { implicit req: DatasetVersionRequest =>
+            segment(Some(Role.Member)).map(response.ok)
           }
 
-          post("/commit") {
-            withSegment[CommitRequest](Some(Role.Owner)) { (req, _, segment) =>
+          post("/commit") { implicit req: CommitRequest =>
+            segment(Some(Role.Owner)).flatMap { segment =>
               cloudService.size(req.path).flatMap { size =>
                 val data = SegmentData(req.path, "", size, req.rows, req.sample)
                 publisher
@@ -525,19 +643,23 @@ class DatasetController @Inject() (
             }
           }
 
-          post("/fail") {
-            withSegment[FailRequest](Some(Role.Owner)) { (req, _, segment) =>
+          post("/fail") { implicit req: FailRequest =>
+            segment(Some(Role.Owner)).flatMap { segment =>
               publisher
                 .publish(Message.SegmentTransition(segment.id, Transition.Fail(req.cause, req.errorMessage)))
                 .map(_ => response.created)
             }
           }
 
-          post("/materialize") {
-            withSegment[DatasetVersionRequest](Some(Role.Owner)) { (_, _, segment) =>
+          post("/materialize") { implicit req: DatasetVersionRequest =>
+            segment(Some(Role.Owner)).flatMap { segment =>
               if (segment.state == SegmentState.Announced) {
+                val id = client match {
+                  case Some(Auth.User(userId)) => userId
+                  case _ => -1
+                }
                 publisher
-                  .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(-1))))
+                  .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id))))
                   .map(_ => response.created(segment.id))
               } else {
                 Future.value(response.badRequest(s"Segment has state ${segment.state}"))
@@ -545,19 +667,21 @@ class DatasetController @Inject() (
             }
           }
 
-          get("/history") {
-            withSegment[DatasetVersionRequest](Some(Role.Member)) { (_, _, segment) =>
+          get("/history") { implicit req: DatasetVersionRequest =>
+            segment(Some(Role.Member)).flatMap { segment =>
               segmentDAO.transitions(segment.id).map(response.ok)
             }
           }
 
-          get("/locate") {
-            withSegment[DatasetVersionRequest](Some(Role.Member)) { (_, dataset, segment) =>
-              locate(Some(segment), dataset).map(response.ok)
+          get("/locate") { implicit req: DatasetVersionRequest =>
+            dataset(Some(Role.Member)).flatMap { dataset =>
+              segment(Some(Role.Member)).flatMap { segment =>
+                locate(Some(segment), dataset).map(response.ok)
+              }
             }
           }
 
-          get("/provenance") {
+          get("/provenance") { implicit req: DatasetVersionRequest =>
             def parents(segment: Segment): Future[ProvenanceResponse] = {
               datasetDAO.byId(segment.datasetId).flatMap { dataset =>
                 val upstreams = segmentDAO.inputs(segment.id).flatMap { inputs =>
@@ -583,7 +707,7 @@ class DatasetController @Inject() (
               }
             }
 
-            withSegment[DatasetVersionRequest](Some(Role.Member)) { (_, _, segment) =>
+            segment(Some(Role.Member)).flatMap { segment =>
               parents(segment).map(response.ok)
             }
           }

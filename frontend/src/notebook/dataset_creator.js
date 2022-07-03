@@ -6,6 +6,7 @@ import {ReactWidget} from "@jupyterlab/ui-components";
 import {UNSAFE_LocationContext as LocationContext, UNSAFE_NavigationContext as NavigationContext} from "react-router";
 import {ValidatingInput} from "../common";
 import validateTag from "../common/validate";
+import util from "../util";
 
 export default class DatasetWidget extends ReactWidget {
     payload = null
@@ -40,7 +41,7 @@ export default class DatasetWidget extends ReactWidget {
     }
 }
 
-function VisibilityInput({onSelect}) {
+export function VisibilityInput({onSelect}) {
     const [selected, setSelected] = useState('Public')
     const select = (visibility) => {
         setSelected(visibility)
@@ -71,7 +72,7 @@ function VisibilityInput({onSelect}) {
     </Form.Field>
 }
 
-function OwnerInput({onSelect}) {
+export function OwnerInput({onSelect}) {
     const [entities, setEntities] = useState(null)
     const [selected, setSelected] = useState(null)
     useEffect(async () => {
@@ -112,6 +113,8 @@ class DatasetCreator extends Component {
         loading: false,
         createdTag: null,
         tag: '',
+        unbounded: false,
+        retention: '',
         description: '',
         tagValid: false,
         triggered: !!this.props.payload.touchedDatasets.length,
@@ -122,7 +125,7 @@ class DatasetCreator extends Component {
     }
 
     createDataset = async () => {
-        const {tag, triggered, frequency, visibility, owner, description} = this.state
+        const {tag, triggered, frequency, retention, visibility, owner, description} = this.state
         const {payload: {touchedDatasets, resultType}, notebook} = this.props
         this.setState({loading: true})
         try {
@@ -130,7 +133,7 @@ class DatasetCreator extends Component {
             content.cells = content.cells.map(cell => {
                 return {...cell, outputs: []}
             })
-            await API.createDataset(
+            await API.createManagedDataset(
                 owner,
                 tag,
                 description,
@@ -139,7 +142,8 @@ class DatasetCreator extends Component {
                 visibility,
                 touchedDatasets,
                 !triggered,
-                frequency ? `${parseInt(frequency)}.minutes` : null
+                frequency ? `${parseInt(frequency)}.minutes` : null,
+                retention ? `${parseInt(retention)}.minutes` : null
             )
             this.setState({createdTag: tag})
         } finally {
@@ -171,7 +175,7 @@ class DatasetCreator extends Component {
     }
 
     materializtionStrategy = () => {
-        const {manual} = this.state
+        const {manual, frequency} = this.state
 
         if (manual) {
             return <Container className='strategy-container'>
@@ -180,12 +184,12 @@ class DatasetCreator extends Component {
         } else {
             return <div className='strategy-input'>
                 <div className='strategy-text'>
-                    <Form.Field inline error={false}>
+                    <Form.Field inline error={!!frequency && !util.isNumeric(frequency)}>
                         <Input
                             autoFocus
                             onChange={(e, d) => this.setState({frequency: d.value})}
                             placeholder='Frequency'
-                            label={{content: 'minutes'}}
+                            label={{basic: true, content: 'minutes'}}
                             labelPosition='right'/>
                     </Form.Field>
                 </div>
@@ -193,9 +197,34 @@ class DatasetCreator extends Component {
         }
     }
 
+    retentionPolicy = () => {
+        const {unbounded, retention} = this.state
+        if (unbounded) {
+            return <Container className='strategy-container'>
+                Segments of this dataset will not be automatically deleted.
+            </Container>
+        } else {
+            return <div className='strategy-input'>
+                <div className='strategy-text'>
+                    <Form.Field inline error={!!retention && !util.isNumeric(retention)}>
+                        <Input
+                            autoFocus
+                            onChange={(e, d) => this.setState({retention: d.value})}
+                            placeholder='Retention'
+                            label={{basic: true, content: 'weeks'}}
+                            labelPosition='right'
+                        />
+                    </Form.Field>
+                </div>
+            </div>
+        }
+    }
+
     render() {
-        const {createdTag, tagValid, loading, tag, triggered, manual, frequency, owner} = this.state
+        const {createdTag, tagValid, loading, tag, triggered, manual, frequency, unbounded, retention, owner} = this.state
         const {payload: {touchedDatasets}} = this.props
+
+        const submittable = tag.length && tagValid && owner && (manual || util.isNumeric(frequency)) && (unbounded || util.isNumeric(retention))
 
         return <Segment className='dataset-creator' textAlign='center'>
             {createdTag ?
@@ -265,9 +294,28 @@ class DatasetCreator extends Component {
                                 Scheduled
                             </Button>
                             {this.materializtionStrategy()}
+
+                            <Header as='h3'>Retention Policy</Header>
+                            <Button
+                                primary={!unbounded}
+                                className='strategy-button'
+                                attached='left'
+                                onClick={() => this.setState({unbounded: false, retention: ''})}
+                            >
+                                Pruned
+                            </Button>
+                            <Button
+                                primary={unbounded}
+                                className='strategy-button'
+                                attached='right'
+                                onClick={() => this.setState({unbounded: true})}
+                            >
+                                Unbounded
+                            </Button>
+                            {this.retentionPolicy()}
                         </Grid.Column>
                     </Grid>
-                    <Form.Button disabled={!tag.length || (!manual && !frequency) || !tagValid || !owner} positive loading={loading} type='submit'>Create</Form.Button>
+                    <Form.Button disabled={!submittable} positive loading={loading} type='submit'>Create</Form.Button>
                 </Form>
             }
         </Segment>

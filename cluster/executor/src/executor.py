@@ -13,6 +13,7 @@ from jupyter_server.services.sessions.handlers import SessionHandler, SessionRoo
 from jupyterlab_server import LabServerApp
 from traitlets import Unicode, Instance
 
+from depot_client import DepotClient
 
 def _jupyter_server_extension_points():
     return [{'module': __name__, 'app': DepotServerApp}]
@@ -88,6 +89,9 @@ class DepotServerApp(LabServerApp):
 
     def initialize_handlers(self):
         DepotKernelSpecManager.spec = build_kernel_spec(self.depot_endpoint, self.access_key)
+        depot_client = DepotClient(self.depot_endpoint, self.access_key)
+        cluster = depot_client.cluster()
+        self.log.info(f'Started executor for cluster {cluster["owner"]["name"]}/{cluster["cluster"]["tag"]}')
 
         multiprocessing.set_start_method('spawn')
 

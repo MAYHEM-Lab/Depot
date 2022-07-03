@@ -4,8 +4,8 @@ import java.util.UUID
 
 import com.twitter.finatra.utils.FuturePools
 import com.twitter.inject.annotations.Flag
-import com.twitter.util.{Future, FuturePool}
 import com.twitter.util.logging.Logging
+import com.twitter.util.{Await, Future, FuturePool}
 import javax.inject.{Inject, Singleton}
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
 import wtf.knc.depot.model.{Dataset, Entity, Segment, Visibility}
@@ -13,7 +13,8 @@ import wtf.knc.depot.model.{Dataset, Entity, Segment, Visibility}
 import scala.sys.process._
 
 trait CloudService {
-  def allocatePath(entity: Entity, dataset: Dataset, segment: Segment): String
+  def allocatePath(entity: Entity, dataset: Dataset, segment: Segment): (String, String)
+  def reclaimPath(path: String): Future[Unit]
   def size(path: String): Future[Long]
   def createDataset(entityName: String, datasetTag: String): Future[Unit]
   def createEntity(name: String): Future[(String, String)]
@@ -23,6 +24,20 @@ trait CloudService {
   def addDatasetACL(entityName: String, datasetOwner: String, datasetTag: String): Future[Unit]
   def delDatasetACL(entityName: String, datasetOwner: String, datasetTag: String): Future[Unit]
 }
+
+/*
+Currently uses a bucket per dataset. This limits us to 50 (1 private + 1 public) datasets total.
+We can utilize a single bucket to store all datasets if Eucalyptus gives us sufficient IAM control:
+
+arn:aws:s3:::my-bucket/my-dataset/\*
+s3:DeleteObject
+s3:PutObject
+s3:HeadObject
+s3:GetObject
+
+arn:aws:s3:::my-bucket/my-dataset
+s3:ListBucket
+ */
 
 @Singleton
 class EucalyptusCloudService @Inject() (
@@ -51,14 +66,26 @@ class EucalyptusCloudService @Inject() (
   private def privateBucketName(entityName: String, datasetTag: String) =
     s"$deployment.private-$entityName-$datasetTag".toLowerCase
 
-  override def allocatePath(entity: Entity, dataset: Dataset, segment: Segment): String = {
+  Await.result {
+    s3Pool { s3.createBucket(s"$deployment.uploads") }
+  }
+
+  override def allocatePath(entity: Entity, dataset: Dataset, segment: Segment): (String, String) = {
     val id = UUID.randomUUID().toString
     val bucketFn = dataset.visibility match {
       case Visibility.Public => publicBucketName _
       case Visibility.Private => privateBucketName _
     }
     val bucket = bucketFn(entity.name, dataset.tag)
-    s"s3n://$bucket/segments/${segment.version}/$id".toLowerCase
+
+    (bucket, s"segments/${segment.version}/$id".toLowerCase)
+  }
+
+  override def reclaimPath(path: String): Future[Unit] = s3Pool {
+    val location = path.substring(6)
+    val Array(bucket, parts) = location.split("/", 2)
+    val objects = s3.listObjects(bucket, parts, null)
+    s3.deleteMultipleObjects(bucket, objects.map(_.getKey))
   }
 
   override def size(path: String): Future[Long] = s3Pool {

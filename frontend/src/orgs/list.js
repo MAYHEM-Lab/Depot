@@ -6,14 +6,14 @@ import API from "../api";
 import './organization.css'
 import {Link} from "react-router-dom";
 
-export default function ListOrganizations({entity}) {
+export default function ListOrganizations({entity, trigger}) {
     const [orgs, setOrgs] = useState(null)
     useEffect(async () => {
         const {entities} = await API.getAuthorizedEntities()
         const orgIds = entities.filter((e) => e.type === 'Organization')
         const orgs = await Promise.all(orgIds.map((e) => API.getEntity(e.name)))
         setOrgs(orgs)
-    }, [entity])
+    }, [entity, trigger])
     return <OrganizationList orgs={orgs}/>
 }
 

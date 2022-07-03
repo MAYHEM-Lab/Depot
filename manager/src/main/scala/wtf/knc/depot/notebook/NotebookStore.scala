@@ -1,8 +1,9 @@
 package wtf.knc.depot.notebook
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.twitter.util.{Await, Future, FuturePool}
+import com.twitter.inject.annotations.Flag
 import com.twitter.util.jackson.ScalaObjectMapper
+import com.twitter.util.{Await, Future, FuturePool}
 import javax.inject.{Inject, Singleton}
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
 import org.jets3t.service.model.S3Object
@@ -25,11 +26,12 @@ trait NotebookStore {
 
 @Singleton
 class CloudNotebookStore @Inject() (
+  @Flag("deployment.id") deployment: String,
   objectMapper: ScalaObjectMapper,
   s3: RestS3Service,
   s3Pool: FuturePool
 ) extends NotebookStore {
-  private final val NotebookDir = "depot.notebooks"
+  private final val NotebookDir = s"$deployment.notebooks"
   Await.result {
     s3Pool { s3.createBucket(NotebookDir) }
   }

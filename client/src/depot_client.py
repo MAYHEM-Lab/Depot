@@ -1,12 +1,4 @@
-import pyspark
 import requests
-
-TYPE_MAPPINGS = {
-    "string": "String",
-    "integer": "Integer",
-    "float": "Float",
-    "double": "Double"
-}
 
 
 class DepotClient:
@@ -44,9 +36,10 @@ class DepotClient:
         segment = r.json()
         return segment
 
-    def fail_segment(self, entity: str, tag: str, version: int, error_message: str):
+    def fail_segment(self, entity: str, tag: str, version: int, cause: str, error_message: str):
         r = requests.post(
             f'{self.depot_destination}/api/entity/{entity}/datasets/{tag}/segments/{version}/fail', json={
+                'cause': cause,
                 'error_message': error_message
             },
             headers={'access_key': self.access_key}
@@ -63,9 +56,3 @@ class DepotClient:
             headers={'access_key': self.access_key}
         )
         assert r.status_code == 201
-
-    def as_depot_schema(self, schema: pyspark.sql.types.StructType):
-        return {
-            'type': 'Table',
-            'columns': [{'name': f.name, 'column_type': TYPE_MAPPINGS[f.dataType.simpleString()]} for f in schema.fields]
-        }

@@ -1,14 +1,17 @@
 package wtf.knc.depot
 
 import com.google.inject.Module
+import com.twitter.finagle.Http
 import com.twitter.finagle.http.filter.Cors
 import com.twitter.finagle.http.{Request, Response}
 import com.twitter.finatra.http.HttpServer
+import com.twitter.finatra.http.filters.ExceptionMappingFilter
 import com.twitter.finatra.http.routing.HttpRouter
 import com.twitter.inject.requestscope.{FinagleRequestScopeFilter, FinagleRequestScopeModule}
 import wtf.knc.depot.controller._
 import wtf.knc.depot.module._
 import wtf.knc.depot.service.MessageService
+import com.twitter.conversions.StorageUnitOps._
 
 object Main extends HttpServer {
 
@@ -24,6 +27,7 @@ object Main extends HttpServer {
 
   override def configureHttp(router: HttpRouter): Unit = router
     .filter(new Cors.HttpFilter(Cors.UnsafePermissivePolicy), beforeRouting = true)
+    .filter[ExceptionMappingFilter[Request]]
     .filter[FinagleRequestScopeFilter[Request, Response]]
     .filter[AuthFilter]
     .add[ClusterController]
@@ -32,6 +36,11 @@ object Main extends HttpServer {
     .add[EntityController]
     .add[AuthController]
     .add[ValidateController]
+    .add[UploadController]
+
+  override def configureHttpServer(server: Http.Server): Http.Server = server
+    .withMaxRequestSize(50.megabytes)
+//    .withStreaming()
 
   override def setup(): Unit = {
     val messenger = injector.instance[MessageService]

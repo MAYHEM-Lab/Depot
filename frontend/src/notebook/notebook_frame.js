@@ -7,11 +7,12 @@ import {editorServices} from '@jupyterlab/codemirror';
 import {RenderMimeRegistry, standardRendererFactories} from "@jupyterlab/rendermime";
 import {BoxPanel, Widget} from "@lumino/widgets";
 
-import '@jupyterlab/application/style/index.css';
-import '@jupyterlab/codemirror/style/index.css';
-import '@jupyterlab/completer/style/index.css';
-import '@jupyterlab/notebook/style/index.css';
+import '@jupyterlab/notebook/style/index.js';
+import '@jupyterlab/ui-components/style/index.js';
+import '@jupyterlab/cells/style/index.js';
+
 import '@jupyterlab/theme-light-extension/style/theme.css';
+
 import './notebook.css'
 
 import API from '../api'
@@ -26,6 +27,7 @@ import NotebookTitle from "./notebook_title";
 import NotebookCreator from "./notebook_creator";
 
 import DatasetWidget from "./dataset_creator";
+import {CodeCell} from "@jupyterlab/cells";
 
 function ClusterSelector({onSelect, user}) {
     const [clusters, setClusters] = useState(null)
@@ -57,7 +59,7 @@ function ClusterSelector({onSelect, user}) {
                 <Icon name='server'/>
                 <span className='cluster-select-title'>
                     {cluster.tag}
-                    </span>
+                </span>
             </div>
             <div className='cluster-select-description'>
                 <Icon name={cluster.entityType === 'User' ? 'user' : 'building'}/>
@@ -102,7 +104,7 @@ export default class NotebookFrame extends Component {
 
     constructor(props) {
         super(props)
-        const {location, navigator} = props
+        const {location, navigator, user} = props
 
         SessionAPI.listRunning = () => Promise.resolve([])
         KernelAPI.listRunning = () => Promise.resolve([])
@@ -142,7 +144,7 @@ export default class NotebookFrame extends Component {
         this.docRegistry.addModelFactory(mFactory)
         this.docRegistry.addWidgetFactory(wFactory)
 
-        const drive = new DepotDrive(null)
+        const drive = new DepotDrive(null, user)
 
         this.contentsManager = new ContentsManager({
             defaultDrive: drive
@@ -155,7 +157,7 @@ export default class NotebookFrame extends Component {
             this.panel.dispose()
             this.state.notebooks.forEach((nb) => nb.widget.dispose())
         })
-        // this.openNotebook('kerem/d', 'kerem', 'knc-test-cluster')
+        // this.openNotebook('d', 'm', 'KC-test')
     }
 
     getDocManager = (entity, cluster) => {
@@ -183,6 +185,19 @@ export default class NotebookFrame extends Component {
         return docManager
     }
 
+    openWidget = (entity, cluster, id) => {
+        const widget = this.getDocManager(entity, cluster).open(id)
+        widget.toolbar.dispose()
+        widget.content.contentFactory.createCodeCell = (editor) => {
+            const cell = new CodeCell(editor).initializeState();
+            const widgets = cell.children()._source
+            widgets[1].children()._source[0].dispose()
+            widgets[3].children()._source[0].dispose()
+            return cell
+        }
+        return widget
+    }
+
     newNotebook = (entity, cluster) => {
         const {notebooks, activeNotebookIdx} = this.state
         if (activeNotebookIdx !== -1) {
@@ -190,8 +205,7 @@ export default class NotebookFrame extends Component {
         }
         console.log('Opening new')
         const id = '#anonymous_' + this.anonymousNotebookId++
-        const widget = this.getDocManager(entity, cluster).open(id)
-        widget.toolbar.dispose()
+        const widget = this.openWidget(entity, cluster, id)
         const notebook = {
             widget: widget,
             entity: entity,
@@ -219,8 +233,7 @@ export default class NotebookFrame extends Component {
 
         let notebook
         if (existingIdx === -1) {
-            const widget = this.getDocManager(entity, cluster).open(notebookId)
-            widget.toolbar.dispose()
+            const widget = this.openWidget(entity, cluster, notebookId)
             this.panel.addWidget(widget)
 
             notebook = {

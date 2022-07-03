@@ -2,6 +2,10 @@
   flex: 1 1 auto;
 }
 
+:root {
+  --jp-code-font-size: 14px
+}
+
 .p-BoxPanel {
   height: 100%;
 }
@@ -130,9 +134,4 @@
 
 .notebook-tab-button:hover {
   background-color: lightgray;
-}
-
-
-.jp-NotebookPanel {
-  border-top: 1px solid #e0e0e0;
 }

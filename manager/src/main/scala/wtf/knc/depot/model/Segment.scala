@@ -42,6 +42,7 @@ object SegmentState {
     case "Transforming" => SegmentState.Transforming
     case "Materialized" => SegmentState.Materialized
     case "Failed" => SegmentState.Failed
+    case "Released" => SegmentState.Released
   }
 
   case object Initializing extends SegmentState("Initializing")
@@ -51,6 +52,7 @@ object SegmentState {
   case object Transforming extends SegmentState("Transforming")
   case object Materialized extends SegmentState("Materialized")
   case object Failed extends SegmentState("Failed")
+  case object Released extends SegmentState("Released")
 }
 
 class StateSerializer extends StdSerializer[SegmentState](classOf[SegmentState]) {

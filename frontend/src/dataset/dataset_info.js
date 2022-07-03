@@ -15,7 +15,7 @@ export default function DatasetInfo() {
                 <Grid.Column>
                     <Container fluid>
                         <Header size='small'>Description</Header>
-                        <p className='dataset-description'>
+                        <p className={'dataset-description' + (dataset.description ? '' : ' missing')}>
                             {dataset.description || 'No description provided.'}
                         </p>
                     </Container>
@@ -35,7 +35,7 @@ export default function DatasetInfo() {
                 <Grid.Column>
                     <Header size='small'>Lineage</Header>
                     <DataGraph
-                        graphPromise={API.getLineage(entity.name, dataset.tag)}
+                        graphPromise={() => API.getLineage(entity.name, dataset.tag)}
                         renderLink={(e) => `/${e.entity_name}/${e.dataset_tag}`}
                         renderNode={(e) => `${e.entity_name}/${e.dataset_tag}`}
                         getNodeId={(e) => `${e.entity_name}/${e.dataset_tag}`}

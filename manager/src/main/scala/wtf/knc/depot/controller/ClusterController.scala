@@ -6,13 +6,7 @@ import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.Logging
 import com.twitter.util.Future
 import javax.inject.{Inject, Provider, Singleton}
-import wtf.knc.depot.controller.ClusterController.{
-  ClusterInfo,
-  ClusterKeys,
-  ClusterRequest,
-  ClustersResponse,
-  ProvisionClusterRequest
-}
+import wtf.knc.depot.controller.ClusterController._
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO}
 import wtf.knc.depot.model._
 

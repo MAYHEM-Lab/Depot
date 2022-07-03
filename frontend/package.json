@@ -5,6 +5,7 @@
   "dependencies": {
     "@jupyterlab/application": "^4.0.0-alpha.7",
     "@jupyterlab/apputils": "^4.0.0-alpha.7",
+    "@jupyterlab/cells": "^4.0.0-alpha.7",
     "@jupyterlab/codemirror": "^4.0.0-alpha.7",
     "@jupyterlab/completer": "^4.0.0-alpha.7",
     "@jupyterlab/coreutils": "^6.0.0-alpha.7",
@@ -20,6 +21,7 @@
     "es6-promise": "~4.2.8",
     "http-proxy-middleware": "^2.0.6",
     "moment": "^2.29.2",
+    "moment-duration-format": "^2.3.2",
     "react": "^17.0.0",
     "react-dom": "^17.0.0",
     "react-flow-renderer": "^10.0.8",

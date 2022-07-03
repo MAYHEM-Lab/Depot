@@ -17,9 +17,7 @@ function createPanel(result) {
     const rendermime = new RenderMimeRegistry({
         initialFactories: standardRendererFactories
     })
-
-    const mFactory = new NotebookModelFactory({
-    })
+    const mFactory = new NotebookModelFactory({})
     const wFactory = new NotebookWidgetFactory({
         name: 'Notebook',
         modelName: 'notebook',
@@ -41,7 +39,7 @@ function createPanel(result) {
     docRegistry.addModelFactory(mFactory)
     docRegistry.addWidgetFactory(wFactory)
 
-    const drive = new DepotDrive(result)
+    const drive = new DepotDrive(result, null)
 
     const contentsManager = new ContentsManager({
         defaultDrive: drive

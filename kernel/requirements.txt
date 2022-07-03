@@ -1,3 +1,5 @@
 pyspark==3.2.1
 ipykernel==6.4.2
 ipython==7.29.0
+boto3==1.24.18
+botocore==1.27.18

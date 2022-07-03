@@ -7,7 +7,7 @@ ENV PYSPARK_PYTHON=/usr/bin/python3
 
 RUN apt update && \
     apt -y install wget tar python3 python3-pip && \
-    pip3 --no-cache-dir install pyspark && \
+    pip3 --no-cache-dir install pyspark==3.2.1 && \
     wget https://downloads.apache.org/spark/spark-3.2.1/spark-3.2.1-bin-hadoop3.2-scala2.13.tgz && \
     tar xvf spark-3.2.1-bin-hadoop3.2-scala2.13.tgz && \
     mv spark-3.2.1-bin-hadoop3.2-scala2.13 /opt/ && \
@@ -17,7 +17,7 @@ RUN apt update && \
     echo 'spark.shuffle.service.enabled=true' >> ${SPARK_HOME}/conf/spark-defaults.conf && \
     wget https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/2.10.1/hadoop-aws-2.10.1.jar -P ${SPARK_HOME}/jars && \
     wget https://repo1.maven.org/maven2/org/jets3t/jets3t/0.9.7/jets3t-0.9.7.jar -P ${SPARK_HOME}/jars && \
-    wget https://repo1.maven.org/maven2/com/jamesmurty/utils/java-xmlbuilder/1.1/java-xmlbuilder-1.1.jar && \
+    wget https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.11.271/aws-java-sdk-bundle-1.11.271.jar -P ${SPARK_HOME}/jars && \
     rm -rf /var/lib/apt/lists/*
 
 ADD cluster/spark/conf/jets3t.properties ${SPARK_HOME}/conf

@@ -12,6 +12,7 @@ case class Dataset(
   ownerId: Long,
   tag: String,
   description: String,
+  origin: Origin,
   datatype: Datatype,
   visibility: Visibility,
   retention: Option[Duration],
@@ -26,6 +27,28 @@ case class DatasetCollaborator(
   entityId: Long,
   role: Role
 )
+
+@JsonSerialize(`using` = classOf[OriginSerializer])
+@JsonDeserialize(`using` = classOf[OriginDeserializer])
+sealed abstract class Origin(val name: String)
+object Origin {
+  def parse(str: String): Origin = str match {
+    case "Unmanaged" => Unmanaged
+    case "Managed" => Managed
+  }
+  case object Unmanaged extends Origin("Unmanaged")
+  case object Managed extends Origin("Managed")
+}
+
+class OriginSerializer extends StdSerializer[Origin](classOf[Origin]) {
+  override def serialize(value: Origin, gen: JsonGenerator, provider: SerializerProvider): Unit =
+    gen.writeString(value.name)
+}
+
+class OriginDeserializer extends StdDeserializer[Origin](classOf[Origin]) {
+  override def deserialize(p: JsonParser, ctxt: DeserializationContext): Origin =
+    Origin.parse(p.getText)
+}
 
 @JsonSerialize(`using` = classOf[VisibilitySerializer])
 @JsonDeserialize(`using` = classOf[VisibilityDeserializer])

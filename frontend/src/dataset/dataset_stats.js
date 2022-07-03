@@ -21,8 +21,12 @@ export default function DatasetStats({entity, dataset}) {
                         <Table.Cell>{util.formatTime(dataset.created_at)}</Table.Cell>
                     </Table.Row>
                     <Table.Row>
-                        <Table.Cell><Header sub>Last updated</Header></Table.Cell>
-                        <Table.Cell>{util.formatTime(dataset.updated_at)}</Table.Cell>
+                        <Table.Cell><Header sub>Retention</Header></Table.Cell>
+                        <Table.Cell>{dataset.retention ? util.formatDuration(util.parseDuration(dataset.retention)) : 'Unbounded'}</Table.Cell>
+                    </Table.Row>
+                    <Table.Row>
+                        <Table.Cell><Header sub>Schedule</Header></Table.Cell>
+                        <Table.Cell>{dataset.schedule ? util.formatDuration(util.parseDuration(dataset.schedule)) : 'Manual'}</Table.Cell>
                     </Table.Row>
                     <Table.Row>
                         <Table.Cell><Header sub>Segments</Header></Table.Cell>

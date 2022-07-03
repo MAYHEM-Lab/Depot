@@ -76,32 +76,26 @@ async def transform_worker(client):
     while True:
         item = await transform_queue.get()
         content, entity, tag, version, transform_id, path = item
-        sandbox_path = f'{SANDBOX_DIR}/{transform_id}'
-
+        nb_client = None
         try:
             logger.info(f'Starting transformation {transform_id} to generate segment [{entity}/{tag}@{version}]')
-
-            if not os.path.exists(sandbox_path):
-                os.makedirs(sandbox_path)
-                os.makedirs(f'{sandbox_path}/.depot')
 
             new_spec = build_kernel_spec(
                 client.depot_destination,
                 client.access_key,
-                f'{entity},{tag},{version},{path}'
+                f'{transform_id},{entity},{tag},{version},{path}'
             )
             static_kernel_specs.set_spec(new_spec)
             nb_client = NotebookClient(
                 nbformat.v4.to_notebook_json(content, minor=4),
                 kernel_manager_class=DepotKernelManager,
-                shutdown_kernel='immediate',
-                timeout=60,
-                kernel_name='depot',
-                resources={'metadata': {'path': sandbox_path}}
+                shutdown_kernel='graceful',
+                timeout=180,
+                kernel_name='depot'
             )
-            await nb_client.async_execute()
+            await nb_client.async_execute(cleanup_kc=False)
 
-            with open(f'{sandbox_path}/.depot/outputs', 'r') as f:
+            with open(f'/sandbox/{transform_id}/.outputs', 'r') as f:
                 for line in f.readlines():
                     payload = json.loads(line)
                     rows = payload['rows']
@@ -111,12 +105,16 @@ async def transform_worker(client):
         except Exception as ex:
             logger.exception(f'Error while transforming [{entity}/{tag}@{version}]', exc_info=ex)
             try:
-                client.fail_segment(entity, tag, version, str(ex))
+                client.fail_segment(entity, tag, version, type(ex).__name__, str(ex))
             except Exception as ex2:
                 logger.exception(f'Error while failing segment [{entity}/{tag}@{version}]', exc_info=ex2)
         finally:
-            shutil.rmtree(sandbox_path)
             transform_queue.task_done()
+            if nb_client:
+                try:
+                    await nb_client._async_cleanup_kernel()
+                except Exception as ex:
+                    logger.exception(f'Failed to clean up kernel context', exc_info=ex)
 
 
 class TransformHandler(RequestHandler):
@@ -155,6 +153,8 @@ if __name__ == '__main__':
 
     tornado.options.parse_command_line()
     depot_client = DepotClient(options.depot_endpoint, options.depot_access_key)
+    cluster = depot_client.cluster()
+    logger.info(f'Started transformer for cluster {cluster["owner"]["name"]}/{cluster["cluster"]["tag"]}')
 
     app = Application([
         ('/transform', TransformHandler),

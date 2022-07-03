@@ -11,6 +11,28 @@
     height: 100%;
 }
 
+.dataset-upload-menu {
+    text-align: center;
+}
+
+.dataset-upload-info {
+    text-align: left;
+}
+
+.dataset-upload-file {
+    border-radius: 5px;
+    border: 2px solid lightgray;
+    padding: 20px;
+    height: 100%;
+}
+.dataset-upload-file.highlight {
+    border-color: mediumpurple;
+}
+
+.dataset-upload-item {
+    display: none;
+}
+
 .p-BoxPanel {
     height: 100%;
 }
@@ -24,7 +46,12 @@
 }
 
 .dataset-description {
+    padding-left: 10px;
     font-size: 15px;
+    color: darkslategray;
+}
+
+.dataset-description.missing {
     font-style: italic;
     color: lightslategray;
 }
@@ -32,6 +59,10 @@
 .resource-divider {
     padding-left: 5px;
     padding-right: 5px;
+}
+
+.file-preview-line {
+    margin: 0;
 }
 
 .dataset-sample-container {
@@ -97,4 +128,8 @@
 .segment-history-description {
     margin-left: 10px;
     padding-bottom: 10px;
+}
+
+.settings-buttons {
+    padding-top: 15px;
 }
