@@ -31,12 +31,6 @@ class TransitionHandler @Inject() (
     generateNewSegment(datasetId, trigger)(segmentDAO.defaultCtx)
   }
 
-  def uploadSegment(datasetId: Long, data: SegmentData): Future[Unit] = {
-    segmentDAO.make(datasetId)(segmentDAO.defaultCtx).flatMap { segmentId =>
-      requestTransition(segmentId, Transition.Materialize(data))
-    }
-  }
-
   def handleTransition(segmentId: Long, transition: Transition): Future[Unit] = {
     logger.info(s"Handling transition request for $segmentId: $transition")
     segmentDAO
@@ -47,7 +41,7 @@ class TransitionHandler @Inject() (
               logger.error(s"Segment $segmentId has failed: $cause - $error")
               propagateFailure(segmentId, error)
 
-            case SegmentState.Initializing -> Transition.Materialize(data) =>
+            case SegmentState.Initializing -> Transition.Materialize(data, _) =>
               logger.info(s"Propagating announcements for segment $segmentId")
               segmentDAO.setData(segmentId, data).before {
                 propagateAnnouncement(segmentId)
@@ -69,7 +63,7 @@ class TransitionHandler @Inject() (
               logger.info(s"Segment $segmentId has begun transforming")
               dispatchTransformation(segmentId)
 
-            case SegmentState.Transforming -> Transition.Materialize(data) =>
+            case SegmentState.Transforming -> Transition.Materialize(data, _) =>
               logger.info(s"Segment $segmentId was materialized with $data")
               logger.info(s"Activating waiting segments with segment $segmentId as input")
               segmentDAO.setData(segmentId, data).before {

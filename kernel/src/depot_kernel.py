@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import uuid
 
-from IPython.core.formatters import DisplayFormatter, BaseFormatter, PlainTextFormatter
+from IPython.core.formatters import *
 from ipykernel.ipkernel import IPythonKernel
 from ipykernel.kernelapp import IPKernelApp, kernel_aliases
 from ipykernel.zmqshell import ZMQInteractiveShell
@@ -28,10 +28,24 @@ class DepotFormatter(BaseFormatter):
 class DepotInteractiveShell(ZMQInteractiveShell):
     ast_node_interactivity = 'last_expr_or_assign'
 
-    DisplayFormatter.formatters = {
-        'application/depot-publish': DepotFormatter(),
-        'text/plain': PlainTextFormatter()
-    }
+    formatter_classes = [
+        PlainTextFormatter,
+        HTMLFormatter,
+        MarkdownFormatter,
+        SVGFormatter,
+        PNGFormatter,
+        PDFFormatter,
+        JPEGFormatter,
+        LatexFormatter,
+        JSONFormatter,
+        JavascriptFormatter,
+        DepotFormatter
+    ]
+    d = {}
+    for cls in formatter_classes:
+        f = cls()
+        d[f.format_type] = f
+    DisplayFormatter.formatters = d
 
     def run_cell(self, *args, **kwargs):
         return super(DepotInteractiveShell, self).run_cell(*args, **kwargs)
@@ -61,7 +75,6 @@ class DepotKernelApp(IPKernelApp):
     def initialize(self, argv=None):
         self.parse_command_line(argv)
 
-
         if len(self.transform) > 0:
             _, entity, tag, version, path = self.transform.split(',')
             executor = SparkExecutor(self.client, f'transform:{entity}/{tag}/{version}')
@@ -75,13 +88,15 @@ class DepotKernelApp(IPKernelApp):
         super(DepotKernelApp, self).initialize(argv)
 
 
-def start_kernel(uid, dir, conn, transform, client):
+def start_kernel(uid, dir, conn, transform, client, envs):
     IPKernelApp.connection_file = conn
     IPKernelApp.connection_dir = dir
     IPKernelApp.ipython_dir = dir
     DepotKernelApp.client = client
     DepotKernelApp.transform = transform
 
+    for k, v in envs.items():
+        os.environ[k] = v
     os.chdir(dir)
     os.setgid(uid)
     os.setuid(uid)
@@ -109,7 +124,7 @@ class DepotKernelLauncher(Application):
         if len(self.transform) > 0:
             sandbox_id = self.transform.split(',')[0]
 
-        sandbox_uid = random.randint(2001, 2**16 - 10)
+        sandbox_uid = random.randint(2001, 2 ** 16 - 10)
         sandbox_dir = f'/sandbox/{sandbox_id}'
         sandbox_conn = f'{sandbox_dir}/.connection'
 
@@ -129,8 +144,11 @@ class DepotKernelLauncher(Application):
         os.chown(parent_conn, sandbox_uid, sandbox_uid)
         os.link(parent_conn, sandbox_conn)
 
+        mpl_cfg = f'{sandbox_dir}/.matplotlib'
+        envs = {'MPLCONFIGDIR': mpl_cfg}
+
         client = DepotClient(self.depot_endpoint, self.access_key)
-        p = multiprocessing.Process(target=start_kernel, args=(sandbox_uid, sandbox_dir, sandbox_conn, self.transform, client,))
+        p = multiprocessing.Process(target=start_kernel, args=(sandbox_uid, sandbox_dir, sandbox_conn, self.transform, client, envs))
         p.daemon = True
         p.start()
         try:

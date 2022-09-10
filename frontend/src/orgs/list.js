@@ -1,13 +1,25 @@
 import {Loader, Segment, Table} from "semantic-ui-react";
 import util from "../util";
-import React, {useEffect, useState} from "react";
+import React, {useContext, useEffect, useState} from "react";
 import API from "../api";
 
 import './organization.css'
 import {Link} from "react-router-dom";
+import {EventContext} from "../common/bus";
 
-export default function ListOrganizations({entity, trigger}) {
+export default function ListOrganizations({entity}) {
     const [orgs, setOrgs] = useState(null)
+    const [trigger, setTrigger] = useState(0)
+
+    const eventBus = useContext(EventContext)
+
+    const invalidate = () => setTrigger(t => t + 1)
+
+    useEffect(() => {
+        eventBus.on('reload-orgs', invalidate)
+        return () => eventBus.remove('reload-orgs', invalidate)
+    })
+
     useEffect(async () => {
         const {entities} = await API.getAuthorizedEntities()
         const orgIds = entities.filter((e) => e.type === 'Organization')

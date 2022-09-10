@@ -1,17 +1,14 @@
 package wtf.knc.depot.controller
 
-import java.io.ByteArrayInputStream
-import java.time.Instant
-import java.time.temporal.ChronoUnit
-import java.util.{Date, UUID}
+import java.net.URLEncoder
+import java.nio.charset.Charset
+import java.util.{Base64, UUID}
 
-import com.twitter.finagle.http.{Request, Uri}
 import com.twitter.finatra.http.Controller
 import com.twitter.finatra.http.annotations.RouteParam
-import com.twitter.finatra.http.request.RequestUtils
-import com.twitter.util.{Duration, Future}
+import com.twitter.inject.annotations.Flag
+import com.twitter.util.{Duration, Future, FuturePool}
 import javax.inject.{Inject, Provider, Singleton}
-import org.jets3t.service.Constants
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
 import org.jets3t.service.model.S3Object
 import wtf.knc.depot.controller.DatasetController._
@@ -22,6 +19,8 @@ import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
 import wtf.knc.depot.service.{CloudService, TransitionHandler}
+
+import scala.util.control.NonFatal
 
 object DatasetController {
   trait DatasetRoute extends EntityRoute { val datasetTag: String }
@@ -43,14 +42,6 @@ object DatasetController {
     datasetTag: String
   )
 
-  private case class CreateUnmanaged(
-    @RouteParam entityName: String,
-    @RouteParam datasetTag: String,
-    description: String,
-    datatype: Datatype,
-    visibility: Visibility
-  ) extends DatasetRoute
-
   private case class CreateDataset(
     @RouteParam entityName: String,
     @RouteParam datasetTag: String,
@@ -66,7 +57,13 @@ object DatasetController {
     clusterAffinity: Option[String]
   ) extends DatasetRoute
 
-  private case class DatasetUpdate(
+  private case class UploadDataset(
+    @RouteParam entityName: String,
+    @RouteParam datasetTag: String,
+    files: Map[String, String]
+  ) extends DatasetRoute
+
+  private case class UpdateDataset(
     @RouteParam entityName: String,
     @RouteParam datasetTag: String,
     description: String,
@@ -77,6 +74,11 @@ object DatasetController {
 
   private case class ManageResponse(
     owner: Boolean
+  )
+
+  private case class SampleResponse(
+    sample: Seq[Seq[String]],
+    rows: Long
   )
 
   private case class DatasetCreateResponse(
@@ -152,6 +154,7 @@ object DatasetController {
 
 @Singleton
 class DatasetController @Inject() (
+  @Flag("deployment.id") deployment: String,
   override val authProvider: Provider[Option[Auth]],
   override val clusterDAO: ClusterDAO,
   override val entityDAO: EntityDAO,
@@ -168,6 +171,7 @@ class DatasetController @Inject() (
 ) extends Controller
   with EntityRequests
   with Authentication {
+  private final val UploadBucket = s"$deployment.uploads"
 
   // Does entity `entityId` have role `role` against dataset `dataset`?
   private def authorizeDataset(
@@ -330,6 +334,9 @@ class DatasetController @Inject() (
     }
 
     prefix("/:dataset_tag") {
+      get("/?") { implicit req: DatasetRequest =>
+        dataset(Some(Role.Member)).map(response.ok)
+      }
 
       post("/?") { implicit req: CreateDataset =>
         entity(Some(Role.Owner)).flatMap { owner =>
@@ -344,16 +351,7 @@ class DatasetController @Inject() (
           }
 
           // TODO: kc - validate dataset info
-          val notebookId = UUID.randomUUID().toString.replace("-", "")
           val inputMode = if (req.isolated) InputMode.Ancilla else InputMode.Trigger
-
-          val saveNotebook = if (req.origin == Origin.Managed) {
-            notebookDAO.create(notebookId, Entity.Root.id).before {
-              notebookStore.save(notebookId, req.content)
-            }
-          } else {
-            Future.Done
-          }
 
           // TODO: kc - can user access these datasets?
           // TODO: kc add entity info here
@@ -391,11 +389,18 @@ class DatasetController @Inject() (
                   clusterAffinity
                 )
                 .flatMap { targetDatasetId =>
-                  Future
-                    .join(saveNotebook, collectTriggers)
-                    .flatMap { case (_, inputs) =>
-                      val createTransformation =
-                        transformationDAO.create(targetDatasetId, notebookId).map(_ => targetDatasetId)
+                  collectTriggers
+                    .flatMap { inputs =>
+                      val createTransformation = if (req.origin == Origin.Managed) {
+                        val notebookId = UUID.randomUUID().toString.replace("-", "")
+                        notebookDAO
+                          .create(notebookId, Entity.Root.id)
+                          .before { notebookStore.save(notebookId, req.content) }
+                          .before { transformationDAO.create(targetDatasetId, notebookId).map(_ => targetDatasetId) }
+                      } else {
+                        Future.Done
+                      }
+
                       val createEdges = Future.join(inputs.toSeq.map { case (name, (datasetId, inputMode)) =>
                         graphDAO.make(targetDatasetId, datasetId, name, inputMode, valid = true)
                       })
@@ -425,16 +430,78 @@ class DatasetController @Inject() (
                       }
                     }
                 }
-                .map { _ => response.ok }
+                .map { _ => response.created }
             }
         }
       }
 
-      get("/?") { implicit req: DatasetRequest =>
-        dataset(Some(Role.Member)).map(response.ok)
+      post("/upload") { implicit req: UploadDataset =>
+        entity(Some(Role.Member)).flatMap { owner =>
+          dataset(Some(Role.Owner)).flatMap { dataset =>
+            require(dataset.origin == Origin.Unmanaged, "Only unmanaged datasets can accept file uploads")
+            require(req.files.nonEmpty, "Dataset cannot be empty")
+
+            logger.info(s"Creating new segment for ${owner.name}/${dataset.tag} with ${req.files}")
+            val id = _client match {
+              case Some(Auth.User(userId)) => userId
+              case _ => -1
+            }
+            segmentDAO.make(dataset.id).flatMap { segmentId =>
+              segmentDAO
+                .byId(segmentId)
+                .flatMap { segment =>
+                  val (bucket, root) = cloudService.allocatePath(owner, dataset, segment)
+                  val copyFiles = req.files.toSeq.map { case (key, fileId) =>
+                    val filename = URLEncoder.encode(key, Charset.defaultCharset())
+                    val uploadPath = s"${owner.name}/$fileId"
+                    val targetPath = s"$root/$filename"
+                    FuturePool.unboundedPool {
+                      logger.info(s"Copying file $uploadPath to $targetPath")
+                      s3.copyObject(
+                        UploadBucket,
+                        uploadPath,
+                        bucket,
+                        new S3Object(targetPath),
+                        false
+                      )
+
+                      val meta = s3.getObjectDetails(UploadBucket, uploadPath)
+                      val head = s3.getObject(UploadBucket, uploadPath, null, null, null, null, 0L, 999L)
+                      try {
+                        val sample = Base64.getEncoder.encode(head.getDataInputStream.readNBytes(1000))
+                        Seq(filename, meta.getContentLength, meta.getMetadata("Depot-Content-Type"), new String(sample))
+                      } finally {
+                        head.getDataInputStream.close()
+                      }
+                    }
+                  }
+                  Future
+                    .collect(copyFiles)
+                    .flatMap { fileData =>
+                      val data = SegmentData(
+                        s"s3a://$bucket/$root",
+                        "",
+                        fileData.map(_(1).toString.toInt).sum,
+                        0,
+                        fileData.map(_.map(_.toString))
+                      )
+                      publisher
+                        .publish(
+                          Message
+                            .SegmentTransition(segmentId, Transition.Materialize(data, Trigger.Manual(id, owner.id)))
+                        )
+                    }
+                }
+                .rescue { case NonFatal(e) =>
+                  logger.error(s"Failed to copy uploaded files", e)
+                  segmentDAO.delete(segmentId).before(Future.exception(e))
+                }
+            }
+          }
+        }
       }
 
-      patch("/?") { implicit req: DatasetUpdate =>
+      patch("/?") { implicit req: UpdateDataset =>
         dataset(Some(Role.Owner)).flatMap { dataset =>
           logger.info(s"Handling dataset update for ${dataset.tag}: $req")
           datasetDAO
@@ -466,17 +533,21 @@ class DatasetController @Inject() (
             }
             .before {
               datasetDAO.byId(dataset.id).flatMap { dataset =>
-                val createSchedule = req.schedule match {
-                  case Some(duration) =>
-                    publisher.publish(Message.DatasetSchedule(dataset.id, dataset.updatedAt), duration)
-                  case _ => Future.Done
+                if (dataset.origin == Origin.Managed) {
+                  val createSchedule = req.schedule match {
+                    case Some(duration) =>
+                      publisher.publish(Message.DatasetSchedule(dataset.id, dataset.updatedAt), duration)
+                    case _ => Future.Done
+                  }
+                  val createPruner = req.retention match {
+                    case Some(retention) =>
+                      publisher.publish(Message.DatasetPrune(dataset.id, dataset.updatedAt), retention)
+                    case _ => Future.Done
+                  }
+                  Future.join(createSchedule, createPruner).unit
+                } else {
+                  Future.Done
                 }
-                val createPruner = req.retention match {
-                  case Some(retention) =>
-                    publisher.publish(Message.DatasetPrune(dataset.id, dataset.updatedAt), retention)
-                  case _ => Future.Done
-                }
-                Future.join(createSchedule, createPruner).unit
               }
             }
             .map(_ => response.noContent)
@@ -529,7 +600,7 @@ class DatasetController @Inject() (
             lastMaterialized match {
               case Some(segment) =>
                 segmentDAO.data(segment.id).map {
-                  case Some(data) => response.ok(data.sample)
+                  case Some(data) => response.ok(SampleResponse(data.sample, data.rows))
                   case _ => response.notFound
                 }
               case _ => Future.value(response.ok(Seq.empty))
@@ -632,12 +703,27 @@ class DatasetController @Inject() (
             segment(Some(Role.Member)).map(response.ok)
           }
 
+          get("/download") { implicit req: DatasetVersionRequest =>
+            segment(Some(Role.Member)).flatMap { segment =>
+              require(segment.state == SegmentState.Materialized)
+              segmentDAO.data(segment.id).flatMap {
+                case Some(data) =>
+                  cloudService
+                    .downloadPath(data.path)
+                    .map(response.ok)
+
+                case _ => throw response.notFound.toException
+              }
+            }
+          }
+
           post("/commit") { implicit req: CommitRequest =>
             segment(Some(Role.Owner)).flatMap { segment =>
               cloudService.size(req.path).flatMap { size =>
                 val data = SegmentData(req.path, "", size, req.rows, req.sample)
+                val trigger = Trigger.System()
                 publisher
-                  .publish(Message.SegmentTransition(segment.id, Transition.Materialize(data)))
+                  .publish(Message.SegmentTransition(segment.id, Transition.Materialize(data, trigger)))
                   .map(_ => response.created)
               }
             }
@@ -658,8 +744,9 @@ class DatasetController @Inject() (
                   case Some(Auth.User(userId)) => userId
                   case _ => -1
                 }
+                // TODO: Allow all authorized users to materialize datasets and select a quota (via org) to consume
                 publisher
-                  .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id))))
+                  .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id, id))))
                   .map(_ => response.created(segment.id))
               } else {
                 Future.value(response.badRequest(s"Segment has state ${segment.state}"))

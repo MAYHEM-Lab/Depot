@@ -160,7 +160,7 @@ class DatasetCreator extends Component {
                 <List bulleted>
                     {touchedDatasets.map(({entity, tag}) =>
                         <List.Item key={`${entity}/${tag}`}>
-                            <Link to={`/${entity}/${tag}`}>
+                            <Link to={`/${entity}/datasets/${tag}`}>
                                 <code>{`${entity}/${tag}`}</code>
                             </Link>
                         </List.Item>
@@ -230,7 +230,7 @@ class DatasetCreator extends Component {
             {createdTag ?
                 <>
                     <Icon size='huge' name='check circle outline' color='green'/>
-                    <Header>Created dataset <Link to={`/${owner}/${createdTag}`}>{`${owner}/${createdTag}`}</Link></Header>
+                    <Header>Created dataset <Link to={`/${owner}/datasets/${createdTag}`}>{`${owner}/${createdTag}`}</Link></Header>
                 </> :
                 <Form onSubmit={this.createDataset}>
                     <Grid padded columns={2}>

@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import ReactFlow, {Controls, Handle, Position} from "react-flow-renderer";
 import {Container, Header, Loader} from "semantic-ui-react";
 import {Link} from "react-router-dom";
-import DatasetIcon from "../dataset_icon";
+import DatasetIcon from "../icon";
 
 function DataNode({data: {renderLink, renderNode, entry, primary}}) {
     const color = entry.valid ? (primary ? 'blue' : 'black') : 'red';

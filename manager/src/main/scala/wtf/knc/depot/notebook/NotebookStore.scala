@@ -21,6 +21,7 @@ object NotebookStore {
 
 trait NotebookStore {
   def get(tag: String): Future[NotebookContents]
+  def size(tag: String): Future[Long]
   def save(tag: String, contents: NotebookContents): Future[Unit]
 }
 
@@ -31,9 +32,14 @@ class CloudNotebookStore @Inject() (
   s3: RestS3Service,
   s3Pool: FuturePool
 ) extends NotebookStore {
-  private final val NotebookDir = s"$deployment.notebooks"
+  private final val NotebookDir = s"notebooks"
   Await.result {
     s3Pool { s3.createBucket(NotebookDir) }
+  }
+
+  override def size(tag: String): Future[Long] = s3Pool {
+    val meta = s3.getObjectDetails(NotebookDir, tag)
+    meta.getContentLength
   }
 
   override def get(tag: String): Future[NotebookContents] = s3Pool {

@@ -1,8 +1,9 @@
 import React, {useEffect, useState} from 'react';
-import {Container, List, Loader, Tab, Table} from "semantic-ui-react";
+import {Container, Label, List, Loader, Tab, Table} from "semantic-ui-react";
 import API from "../api";
+import util from "../util";
 
-const renderTable = (columns, sample) => {
+const renderTable = (columns, sample, rows) => {
     return (
         <Container className='dataset-sample-container'>
             <Table singleLine striped celled>
@@ -36,19 +37,26 @@ const renderTable = (columns, sample) => {
 }
 
 const renderRaw = (sample) => {
-    const panes = sample.map(([file, ...data]) => {
-            return {
-                menuItem: file,
-                render: () => <Tab.Pane>
-                    <List ordered>
-                        {data.map((line, idx) => {
-                            return <List.Item key={idx}><pre className='file-preview-line'>{line}</pre></List.Item>
-                        })}
-                    </List>
-                </Tab.Pane>
-            }
+    const panes = sample.map(([file, size, type, data], idx) => {
+        const text = window.atob(data)
+        const lines = text.split(/\n/)
+        return {
+            menuItem: {
+                content: <><span className='file-preview-name' title={file}>{file}</span><span className='file-preview-size'> &mdash; {util.formatBytes(size)}</span></>,
+                key: idx
+            },
+            render: () => <Tab.Pane className='file-preview-container'>
+                <Label attached='top'>Displayed {text.length} bytes of {util.formatBytes(size)}</Label>
+                <List ordered>
+                    {lines.map((line, idx) => {
+                        return <List.Item key={idx}>
+                            <pre className='file-preview-line'>{line}&#x200b;</pre>
+                        </List.Item>
+                    })}
+                </List>
+            </Tab.Pane>
         }
-    )
+    })
     return !sample.length ?
         <Table>
             <Table.Body>
@@ -61,16 +69,17 @@ const renderRaw = (sample) => {
 
 export default function DatasetSample({entity, dataset}) {
     const [sample, setSample] = useState(null)
-    useEffect(() => {
-        API.getSample(entity.name, dataset.tag).then(result => {
-            setSample(result)
-        })
+    const [rows, setRows] = useState(null)
+    useEffect(async () => {
+        const {sample, rows} = await API.getSample(entity.name, dataset.tag)
+        setSample(sample)
+        setRows(rows)
     }, [entity, dataset])
     if (!sample) {
         return <Loader active/>
     } else {
         if (dataset.datatype.type === 'Table') {
-            return renderTable(dataset.datatype.columns, sample)
+            return renderTable(dataset.datatype.columns, sample, rows)
         } else {
             return renderRaw(sample)
         }

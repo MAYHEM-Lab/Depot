@@ -1,0 +1,46 @@
+.quota-storage-text {
+    float: right;
+    color: gray;
+    font-size: 15px;
+    padding-right: 5em;
+}
+
+.quota-storage-legend {
+    padding-top: 10px;
+    padding-left: 20px;
+    display: inline-flex;
+    gap: 20px;
+}
+
+.quota-storage-legend-meta {
+    color: darkgray;
+}
+
+.quota-storage-legend-dot {
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+    display: inline-block;
+}
+
+.quota-storage-bar {
+    height: 30px;
+    width: 100%;
+    border-radius: 5px !important;
+    border: 1px solid #cccccc;
+    background-color: #e6e6e6;
+    position: relative;
+    text-align: left;
+}
+
+.quota-storage-bar .value {
+    background-color: #7cc4ff;
+    display: inline-block;
+    height: 100%;
+}
+
+.quota-storage-bar .value:first-child {
+    border-bottom-left-radius: 5px !important;
+    border-top-left-radius: 5px !important;
+}

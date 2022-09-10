@@ -20,14 +20,19 @@ export default function DatasetStats({entity, dataset}) {
                         <Table.Cell><Header sub>Created on</Header></Table.Cell>
                         <Table.Cell>{util.formatTime(dataset.created_at)}</Table.Cell>
                     </Table.Row>
-                    <Table.Row>
-                        <Table.Cell><Header sub>Retention</Header></Table.Cell>
-                        <Table.Cell>{dataset.retention ? util.formatDuration(util.parseDuration(dataset.retention)) : 'Unbounded'}</Table.Cell>
-                    </Table.Row>
-                    <Table.Row>
-                        <Table.Cell><Header sub>Schedule</Header></Table.Cell>
-                        <Table.Cell>{dataset.schedule ? util.formatDuration(util.parseDuration(dataset.schedule)) : 'Manual'}</Table.Cell>
-                    </Table.Row>
+                    {dataset.origin === 'Managed' ?
+                        <>
+                            <Table.Row>
+                                <Table.Cell><Header sub>Retention</Header></Table.Cell>
+                                <Table.Cell>{dataset.retention ? util.formatDuration(util.parseDuration(dataset.retention)) : 'Unbounded'}</Table.Cell>
+                            </Table.Row>
+                            <Table.Row>
+                                <Table.Cell><Header sub>Schedule</Header></Table.Cell>
+                                <Table.Cell>{dataset.schedule ? util.formatDuration(util.parseDuration(dataset.schedule)) : 'Manual'}</Table.Cell>
+                            </Table.Row>
+                        </> :
+                        null
+                    }
                     <Table.Row>
                         <Table.Cell><Header sub>Segments</Header></Table.Cell>
                         <Table.Cell>{stats.num_segments}</Table.Cell>

@@ -1,10 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {Link, useOutletContext, useParams} from "react-router-dom";
 
-import util from '../util'
-import API from '../api'
+import util from '../../util'
+import API from '../../api'
 import {Feed, Loader} from "semantic-ui-react";
-import SegmentState from "./segment_state";
+import SegmentState from './state';
 
 async function Trigger(trigger) {
     const {type} = trigger
@@ -35,13 +35,18 @@ async function Awaiting({trigger}) {
     return Trigger(trigger)
 }
 
+async function Materialized({trigger}) {
+    return Trigger(trigger)
+}
+
 async function Unknown() {
     return null
 }
 
 const transitions = {
     'Announced': Announced,
-    'Awaiting': Awaiting
+    'Awaiting': Awaiting,
+    'Materialized': Materialized
 }
 
 export default function SegmentTimeline() {

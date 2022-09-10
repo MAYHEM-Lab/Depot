@@ -35,16 +35,16 @@ export default function NavBar() {
                 disabled={!user}
                 name='notebooks'
             >
-                Saved Notebooks
+                Notebooks
             </Menu.Item>
 
             <Menu.Item
                 as={Link}
-                to={user ? `/?view=clusters` : '/'}
+                to={user ? `/?view=resources` : '/'}
                 disabled={!user}
-                name='clusters'
+                name='resources'
             >
-                Clusters
+                Resources
             </Menu.Item>
         </Menu>
     )

@@ -8,7 +8,7 @@ import javax.inject.{Inject, Provider, Singleton}
 import wtf.knc.depot.controller.EntityController._
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO}
 import wtf.knc.depot.model.{Entity, Role}
-import wtf.knc.depot.service.CloudService
+import wtf.knc.depot.service.{CloudService, QuotaAllocation, QuotaService, QuotaUsage}
 
 object EntityController {
   case class ListRequest(
@@ -17,6 +17,8 @@ object EntityController {
     @QueryParam authorized: Option[Boolean],
     @QueryParam id: Option[Long]
   )
+
+  case class QuotaResponse(allocation: QuotaAllocation, usage: QuotaUsage)
 
   case class OrganizationAddRequest(@RouteParam entityName: String, memberName: String, role: Role) extends EntityRoute
   case class OrganizationRemoveRequest(@RouteParam entityName: String, memberName: String) extends EntityRoute
@@ -38,7 +40,8 @@ class EntityController @Inject() (
   override val entityDAO: EntityDAO,
   override val clusterDAO: ClusterDAO,
   override val authProvider: Provider[Option[Auth]],
-  cloudService: CloudService
+  cloudService: CloudService,
+  quotaService: QuotaService
 ) extends Controller
   with Logging
   with EntityRequests
@@ -102,6 +105,18 @@ class EntityController @Inject() (
               case _ => Future.value(response.notFound)
             }
           case _ => response.forbidden
+        }
+      }
+
+      get("/quota") { implicit req: EntityRequest =>
+        entity(Some(Role.Owner)).flatMap { entity =>
+          Future
+            .join(
+              quotaService.allocatedQuota(entity.id),
+              quotaService.consumedQuota(entity.id)
+            )
+            .map { Function.tupled(QuotaResponse) }
+            .map(response.ok)
         }
       }
 

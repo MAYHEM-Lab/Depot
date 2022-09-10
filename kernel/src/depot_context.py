@@ -1,5 +1,7 @@
+import base64
 import io
 import json
+import mimetypes
 import os
 import re
 from itertools import islice
@@ -14,8 +16,10 @@ S3_REGEX = r'^s3a://(.*?)/(.*?)$'
 
 DOWNLOAD_CHUNK_SIZE = 2 ** 20
 
-SAMPLE_SIZE = 15
-SAMPLE_TRUNCATE = 100
+SAMPLE_ROWS = 15
+SAMPLE_COLUMN_SIZE = 100
+
+SAMPLE_BYTES = 1000
 
 TYPE_MAPPINGS = {
     "string": "String",
@@ -46,6 +50,7 @@ class SparkExecutor(Executor):
         keys = cluster_info['keys']
 
         conf = SparkConf()
+        conf.set('spark.ui.enabled', 'false')
         conf.set('spark.jars.ivy', '/tmp/.ivy/')
         conf.set('spark.app.name', app_name)
         conf.set('spark.hadoop.security.authentication', 'simple')
@@ -55,7 +60,7 @@ class SparkExecutor(Executor):
         conf.set('spark.hadoop.fs.s3a.aws.credentials.provider', 'org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider')
         conf.set('spark.hadoop.fs.s3a.access.key', keys['access_key'])
         conf.set('spark.hadoop.fs.s3a.secret.key', keys['secret_key'])
-        conf.set('spark.hadoop.fs.s3a.endpoint', 's3.cloud.aristotle.ucsb.edu:8773')
+        conf.set('spark.hadoop.fs.s3a.endpoint', 's3.poc.aristotle.ucsb.edu:443')
         conf.set('spark.hadoop.fs.s3a.path.style.access', 'true')
         conf.set('spark.hadoop.fs.s3a.connection.ssl.enabled', 'false')
         conf.set('spark.hadoop.fs.s3a.signing-algorithm', 'S3SignerType')
@@ -64,7 +69,7 @@ class SparkExecutor(Executor):
             's3',
             aws_access_key_id=keys['access_key'],
             aws_secret_access_key=keys['secret_key'],
-            endpoint_url='http://s3.cloud.aristotle.ucsb.edu:8773',
+            endpoint_url='http://s3.poc.aristotle.ucsb.edu:443',
             config=Config(
                 signature_version='s3',
                 s3={
@@ -149,28 +154,29 @@ class TransformContext(DepotContext):
         if isinstance(payload, pyspark.sql.DataFrame):
             self.executor.write(payload, self.target_path)
             rows = payload.count()
-            samples = list(map(lambda r: list(map(lambda v: str(v)[0:SAMPLE_TRUNCATE], r.asDict().values())), payload.take(SAMPLE_SIZE)))
+            samples = list(map(lambda r: list(map(lambda v: str(v)[0:SAMPLE_COLUMN_SIZE], r.asDict().values())), payload.take(SAMPLE_ROWS)))
         elif isinstance(payload, dict):
             for key, data in payload.items():
                 if isinstance(data, bytes):
+                    size = len(data)
+                    type = 'application/octet-stream'
                     src = io.BytesIO(data)
                 else:
+                    size = os.path.getsize(data)
+                    type = mimetypes.MimeTypes().guess_type(data)[0]
                     src = open(data, 'rb')
                 with src as fp:
-                    sample = [key]
-                    lines = [str(line, 'utf-8')[0:SAMPLE_TRUNCATE] for line in islice(fp, SAMPLE_SIZE)]
-                    sample.extend(lines)
-                    samples.append(sample)
+                    samples.append([key, str(size), type, base64.b64encode(fp.read(SAMPLE_BYTES)).decode('ascii')])
                     fp.seek(0)
                     self.executor.upload(f'{self.target_path}/{key}', fp)
         else:
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
         with open('.outputs', 'a+') as f:
-            payload = {
+            result = {
                 'rows': rows,
                 'sample': samples
             }
-            f.write(json.dumps(payload))
+            f.write(json.dumps(result))
             f.write('\n')
 
 

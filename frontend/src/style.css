@@ -9,6 +9,7 @@ html,body {
 
 .app-container {
     height: 100vh;
+    padding: 1rem;
 }
 
 .notebook-panel {

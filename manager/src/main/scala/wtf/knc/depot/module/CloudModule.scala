@@ -24,13 +24,13 @@ object CloudModule extends TwitterModule {
 
   flag[String](
     "euca.iam.url",
-    "http://iam.cloud.aristotle.ucsb.edu:8773/",
+    "http://iam.poc.aristotle.ucsb.edu:443/",
     "Eucalyptus IAM path"
   )
 
   flag[String](
     "euca.s3.url",
-    "http://s3.cloud.aristotle.ucsb.edu:8773/",
+    "http://s3.poc.aristotle.ucsb.edu:443/",
     "Eucalyptus S3 path"
   )
 
@@ -68,7 +68,7 @@ object CloudModule extends TwitterModule {
     props.setProperty("httpclient.proxy-autodetect", "false");
     props.setProperty("s3service.s3-endpoint", url.getHost);
     props.setProperty("s3service.s3-endpoint-http-port", url.getPort.toString);
-    props.setProperty("s3service.https-only", "false");
+    props.setProperty("s3service.https-only", "true");
     props.setProperty("s3service.disable-dns-buckets", "true");
     props.setProperty("storage-service.request-signature-version", "AWS2");
     props.setProperty("storage-service.disable-live-md5", "true");

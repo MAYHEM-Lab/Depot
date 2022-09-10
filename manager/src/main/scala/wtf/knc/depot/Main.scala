@@ -40,7 +40,7 @@ object Main extends HttpServer {
 
   override def configureHttpServer(server: Http.Server): Http.Server = server
     .withMaxRequestSize(50.megabytes)
-//    .withStreaming()
+    .withStreaming(true)
 
   override def setup(): Unit = {
     val messenger = injector.instance[MessageService]

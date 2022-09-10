@@ -64,7 +64,7 @@ function createPanel(result) {
     widget.content.contentFactory.createCodeCell = (editor) => {
         const cell = new CodeCell(editor).initializeState();
         const widgets = cell.children()._source
-        cell.inputArea._prompt.addClass('dataset-code-readonly')
+        cell.inputArea._prompt.dispose()
         const inputWidget = widgets[1]
         const inputCollapserWidget = inputWidget.children()._source[0]
         inputCollapserWidget.dispose()

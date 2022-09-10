@@ -11,7 +11,7 @@ const TIME_UNITS = {
     'day': 24 * 3600 * 1000
 }
 
-export default {
+const util = {
     isNumeric: (val) => {
         const intRegex = /^\d+?$/
         const num = parseInt(val)
@@ -38,10 +38,12 @@ export default {
     formatBytes: (bytes) => {
         if (bytes === 0) return '0 bytes';
 
-        const k = 1024;
+        const k = 1000;
         const sizes = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 }
+
+export default util

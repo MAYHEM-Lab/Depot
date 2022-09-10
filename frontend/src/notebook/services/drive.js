@@ -12,7 +12,6 @@ export default class DepotDrive extends Drive {
 
     get = async (path) => {
         if (this.staticContent) {
-            console.log('Serving static notebook')
             return {
                 format: 'json',
                 type: 'notebook',
@@ -20,7 +19,6 @@ export default class DepotDrive extends Drive {
             }
         }
         if (path.startsWith('#anonymous')) {
-            console.log('Creating new notebook')
 
             const nb = new NotebookModel()
             nb.sharedModel.updateMetadata({

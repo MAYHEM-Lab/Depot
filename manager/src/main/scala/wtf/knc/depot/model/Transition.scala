@@ -9,16 +9,18 @@ import com.fasterxml.jackson.annotation.{JsonSubTypes, JsonTypeInfo}
     new JsonSubTypes.Type(value = classOf[Trigger.Scheduled], name = "Scheduled"),
     new JsonSubTypes.Type(value = classOf[Trigger.Manual], name = "Manual"),
     new JsonSubTypes.Type(value = classOf[Trigger.Upstream], name = "Upstream"),
-    new JsonSubTypes.Type(value = classOf[Trigger.Downstream], name = "Downstream")
+    new JsonSubTypes.Type(value = classOf[Trigger.Downstream], name = "Downstream"),
+    new JsonSubTypes.Type(value = classOf[Trigger.System], name = "System")
   )
 )
 sealed trait Trigger
 object Trigger {
   case class Creation(datasetId: Long) extends Trigger
   case class Scheduled(at: Long) extends Trigger
-  case class Manual(who: Long) extends Trigger
+  case class Manual(who: Long, owner: Long) extends Trigger
   case class Upstream(segmentId: Long) extends Trigger
   case class Downstream(segmentId: Long) extends Trigger
+  case class System() extends Trigger
 }
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
@@ -39,5 +41,5 @@ object Transition {
   case class Await(trigger: Trigger) extends Transition(SegmentState.Awaiting)
   case class Enqueue() extends Transition(SegmentState.Queued)
   case class Transform() extends Transition(SegmentState.Transforming)
-  case class Materialize(data: SegmentData) extends Transition(SegmentState.Materialized)
+  case class Materialize(data: SegmentData, trigger: Trigger) extends Transition(SegmentState.Materialized)
 }
