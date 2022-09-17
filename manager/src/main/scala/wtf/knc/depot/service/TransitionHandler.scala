@@ -1,17 +1,17 @@
 package wtf.knc.depot.service
 
-import java.util.UUID
-
 import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.inject.Logging
-import com.twitter.util.Future
-import javax.inject.{Inject, Singleton}
+import com.twitter.util.{Future, Time}
 import wtf.knc.depot.dao.SegmentDAO.SegmentNotFoundException
 import wtf.knc.depot.dao._
 import wtf.knc.depot.message.{Message, Publisher}
-import wtf.knc.depot.model.{InputMode, SegmentData, SegmentState, Transition, Trigger}
+import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.TransformDispatcher
+
+import java.util.UUID
+import javax.inject.{Inject, Singleton}
 
 @Singleton
 class TransitionHandler @Inject() (
@@ -22,6 +22,7 @@ class TransitionHandler @Inject() (
   datasetDAO: DatasetDAO,
   entityDAO: EntityDAO,
   clusterDAO: ClusterDAO,
+  retentionDAO: RetentionDAO,
   cloudService: CloudService,
   transformClient: TransformDispatcher
 ) extends Logging {
@@ -29,6 +30,10 @@ class TransitionHandler @Inject() (
 
   def createSegment(datasetId: Long, trigger: Trigger): Future[Unit] = {
     generateNewSegment(datasetId, trigger)(segmentDAO.defaultCtx)
+  }
+
+  def initializeSegment(dataset: Dataset, segment: Segment): Future[Unit] = {
+    mkTtlReferences(dataset, segment)(segmentDAO.defaultCtx)
   }
 
   def handleTransition(segmentId: Long, transition: Transition): Future[Unit] = {
@@ -66,8 +71,10 @@ class TransitionHandler @Inject() (
             case SegmentState.Transforming -> Transition.Materialize(data, _) =>
               logger.info(s"Segment $segmentId was materialized with $data")
               logger.info(s"Activating waiting segments with segment $segmentId as input")
-              segmentDAO.setData(segmentId, data).before {
-                activateWaiters(segmentId)
+              retentionDAO.updateSize(segmentId, data.size).before {
+                segmentDAO.setData(segmentId, data).before {
+                  activateWaiters(segmentId)
+                }
               }
 
             case from -> to =>
@@ -75,9 +82,8 @@ class TransitionHandler @Inject() (
               Future.exception(InvalidTransitionException())
           }
           work
-            .before {
-              segmentDAO.recordTransition(segmentId, transition)
-            }
+            .before { segmentDAO.recordTransition(segmentId, transition) }
+            .before { retentionDAO.updateState(segmentId, transition.to) }
             .raiseWithin(10.seconds)(DefaultTimer)
         }
       }
@@ -189,17 +195,28 @@ class TransitionHandler @Inject() (
         dependencies.filter(_.state != SegmentState.Materialized)
       }
     }
-    waitingOn.flatMap { dependencies =>
-      logger.info(s"Segment $segmentId is waiting on: $dependencies")
-      if (dependencies.isEmpty) {
-        requestTransition(segmentId, Transition.Enqueue())
-      } else {
-        Future.join(
-          dependencies
-            .filter(_.state == SegmentState.Announced)
-            .map(_.id)
-            .map(dependency => requestTransition(dependency, Transition.Await(Trigger.Downstream(segmentId))))
-        )
+    val refs = segmentDAO.byId(segmentId).flatMap { segment =>
+      datasetDAO.byId(segment.datasetId).flatMap { dataset =>
+        if (dataset.storageClass == StorageClass.Guaranteed) {
+          Future.Done
+        } else {
+          mkParentReferences(dataset, segment)
+        }
+      }
+    }
+    refs.before {
+      waitingOn.flatMap { dependencies =>
+        logger.info(s"Segment $segmentId is waiting on: $dependencies")
+        if (dependencies.isEmpty) {
+          requestTransition(segmentId, Transition.Enqueue())
+        } else {
+          Future.join(
+            dependencies
+              .filter(_.state == SegmentState.Announced)
+              .map(_.id)
+              .map(dependency => requestTransition(dependency, Transition.Await(Trigger.Downstream(segmentId))))
+          )
+        }
       }
     }
   }
@@ -263,10 +280,56 @@ class TransitionHandler @Inject() (
         case Some(segments) =>
           for {
             segmentId <- segmentDAO.make(datasetId)
+            segment <- segmentDAO.byId(segmentId)
+            dataset <- datasetDAO.byId(datasetId)
             _ <- segmentDAO.addInputs(segmentId, segments.toMap)
+            _ <-
+              if (dataset.storageClass == StorageClass.Guaranteed) mkParentReferences(dataset, segment)
+              else Future.Done
+            _ <- mkTtlReferences(dataset, segment)
             _ <- requestTransition(segmentId, Transition.Announce(trigger))
           } yield ()
         case _ => Future.Done
       }
+  }
+
+  private def mkParentReferences(dataset: Dataset, segment: Segment)(implicit ctx: segmentDAO.Ctx): Future[Unit] = {
+    logger.info(s"Creating parent references for segment $segment of dataset ${dataset.tag}")
+    dependencies(segment).flatMap { parents =>
+      val links = parents.map { parent =>
+        segmentDAO.data(parent.id).flatMap { data =>
+          datasetDAO.byId(parent.datasetId).flatMap { dependency =>
+            entityDAO.byId(dependency.ownerId).flatMap {
+              case Some(owner) =>
+                val cause = RetentionCause.Dependency(owner.name, dependency.tag, parent.version)
+                retentionDAO.create(parent.id, dataset.ownerId, parent.state, data.map(_.size).getOrElse(0), cause)
+              case _ => throw new IllegalArgumentException(s"Unknown owner for $dependency")
+            }
+          }
+        }
+      }
+      Future.join(links)
+    }
+  }
+
+  private def mkTtlReferences(dataset: Dataset, segment: Segment)(implicit ctx: segmentDAO.Ctx): Future[Unit] = {
+    logger.info(s"Creating TTL reference for segment $segment of dataset ${dataset.tag}")
+    val ttl = RetentionCause.TTL(Time.now.inMillis)
+    val loadSize = segmentDAO.data(segment.id).map(_.map(_.size).getOrElse(0L))
+    loadSize.flatMap { size =>
+      retentionDAO.create(segment.id, dataset.ownerId, segment.state, size, ttl)
+    }
+  }
+
+  private def dependencies(segment: Segment)(implicit ctx: segmentDAO.Ctx): Future[Seq[Segment]] = {
+    segmentDAO.inputs(segment.id).flatMap { inputs =>
+      Future
+        .collect {
+          inputs.map { input =>
+            segmentDAO.byId(input.sourceSegmentId).flatMap(dependencies)
+          }
+        }
+        .map(_.flatten)
+    }
   }
 }

@@ -1,81 +1,95 @@
 package wtf.knc.depot.service
 
+import com.twitter.conversions.DurationOps._
 import com.twitter.util.logging.Logging
 import com.twitter.util.{Future, Time}
-import javax.inject.{Inject, Singleton}
-import wtf.knc.depot.dao.{DatasetDAO, SegmentDAO}
+import wtf.knc.depot.dao.{DatasetDAO, RetentionDAO, SegmentDAO}
 import wtf.knc.depot.message.{Message, Publisher}
-import wtf.knc.depot.model.SegmentState
+import wtf.knc.depot.model.{RetentionCause, Segment}
+
+import javax.inject.{Inject, Singleton}
 
 @Singleton
 class RetentionHandler @Inject() (
   datasetDAO: DatasetDAO,
   segmentDAO: SegmentDAO,
+  retentionDAO: RetentionDAO,
   cloudService: CloudService,
   publisher: Publisher
 ) extends Logging {
 
-  def pruneSegment(segmentId: Long): Future[Unit] = {
-    segmentDAO
-      .update(segmentId, SegmentState.Released) { implicit ctx =>
-        { case (_, _) =>
-          segmentDAO.outputs(segmentId).flatMap {
-            case Nil =>
-              val reset = segmentDAO.data(segmentId).flatMap {
-                case Some(data) =>
-                  logger.info(s"Reclaiming persisted data at ${data.path}")
-                  cloudService.reclaimPath(data.path)
-                case _ =>
-                  logger.info(s"No persisted data to reclaim for $segmentId")
-                  Future.Done
-              }
+  private def pruneSegment(segment: Segment): Future[Unit] = {
+    val reset = segmentDAO.data(segment.id).flatMap {
+      case Some(data) =>
+        logger.info(s"Reclaiming persisted data at ${data.path}")
+        cloudService.reclaimPath(data.path)
+      case _ =>
+        logger.info(s"No persisted data to reclaim for ${segment.id}")
+        Future.Done
+    }
 
-              reset.before {
-                logger.info(s"Deleting segment $segmentId")
-                segmentDAO.delete(segmentId)
-              }
-            case _ =>
-              logger.info(s"Segment $segmentId still has inbound references")
+    reset.before {
+      logger.info(s"Deleting segment ${segment.id}")
+      segmentDAO.delete(segment.id)
+    }
+  }
+
+  private def pruneDataset(datasetId: Long): Future[Unit] = {
+    datasetDAO.byId(datasetId).flatMap { dataset =>
+      logger.info(s"Pruning dataset ${dataset.tag}")
+      segmentDAO.list(datasetId).flatMap { segments =>
+        val loadSegments = segments.map { segment =>
+          retentionDAO.listBySegment(segment.id).flatMap { refs =>
+            if (refs.isEmpty) {
+              logger.info(s"Segment ${segment.id} has no inbound references, pruning")
+              pruneSegment(segment)
+            } else {
+              logger.info(s"Segment ${segment.id} still has ${refs.size} inbound references")
               Future.Done
+            }
           }
         }
+        Future.join(loadSegments)
       }
+    }
+  }
+
+  private def releaseExpired(datasetId: Long): Future[Unit] = {
+    datasetDAO.byId(datasetId).flatMap { dataset =>
+      dataset.retention match {
+        case Some(retention) =>
+          logger.info(s"Releasing expired retentions for ${dataset.tag}")
+          segmentDAO.list(datasetId).flatMap { segments =>
+            val releaseSegments = segments.map { segment =>
+              retentionDAO.listBySegment(segment.id).flatMap { retainers =>
+                val ttls = retainers.filter { r =>
+                  r.cause match {
+                    case RetentionCause.TTL(createdAt) if createdAt + retention.inMillis < Time.now.inMillis => true
+                    case _ => false
+                  }
+                }
+                Future.join(ttls.map(retentionDAO.release))
+              }
+            }
+            Future.join(releaseSegments)
+          }
+        case _ =>
+          logger.info(s"Dataset ${dataset.tag} has no retention configured")
+          Future.Done
+      }
+    }
   }
 
   def checkRetention(datasetId: Long, updatedAt: Long): Future[Unit] = {
-    datasetDAO.byId(datasetId).flatMap { dataset =>
-      if (updatedAt == dataset.updatedAt) {
-        dataset.retention match {
-          case Some(retention) =>
-            logger.info(s"Pruning expired segments for dataset ${dataset.tag}")
-            segmentDAO
-              .list(datasetId)
-              .map { segments =>
-                val latestMaterialized = segments
-                  .filter(_.state == SegmentState.Materialized)
-                  .maxByOption(_.version)
-                  .map(_.id)
-
-                segments
-                  .filter(_.id != latestMaterialized.getOrElse(0L))
-                  .filter(_.createdAt < (Time.now - retention).inMillis)
-              }
-              .flatMap { segments =>
-                logger.info(s"Identified segments [${segments.mkString(", ")}] as expired")
-                val prune = segments.map(_.id).map(pruneSegment)
-                Future.join(prune)
-              }
-              .before {
-                publisher.publish(Message.DatasetPrune(datasetId, updatedAt), retention)
-              }
-          case _ =>
-            logger.info(s"Dataset ${dataset.tag} has no retention policy")
-            Future.Done
-        }
-      } else {
-        logger.info(s"Ignoring old retention timeout for ${dataset.tag}")
-        Future.Done
+    releaseExpired(datasetId)
+      .before {
+        pruneDataset(datasetId)
       }
-    }
+      .before {
+        publisher.publish(Message.DatasetPrune(datasetId, updatedAt), 2.minutes)
+      }
+      .handle { case _: NoSuchElementException =>
+        logger.info(s"Ignoring message for dataset $datasetId")
+      }
   }
 }

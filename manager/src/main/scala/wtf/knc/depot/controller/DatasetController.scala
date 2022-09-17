@@ -50,6 +50,7 @@ object DatasetController {
     content: NotebookContents,
     datatype: Datatype,
     visibility: Visibility,
+    storageClass: StorageClass,
     triggers: Seq[DatasetTrigger],
     isolated: Boolean,
     retention: Option[Duration],
@@ -384,6 +385,7 @@ class DatasetController @Inject() (
                   req.origin,
                   req.datatype,
                   req.visibility,
+                  req.storageClass,
                   req.retention,
                   req.schedule,
                   clusterAffinity
@@ -412,7 +414,7 @@ class DatasetController @Inject() (
                         }
                         val createPruner = req.retention match {
                           case Some(retention) =>
-                            publisher.publish(Message.DatasetPrune(targetDatasetId, dataset.updatedAt), retention)
+                            publisher.publish(Message.DatasetPrune(targetDatasetId, dataset.updatedAt))
                           case _ => Future.Done
                         }
                         Future.join(createSchedule, createPruner)
@@ -449,6 +451,9 @@ class DatasetController @Inject() (
             segmentDAO.make(dataset.id).flatMap { segmentId =>
               segmentDAO
                 .byId(segmentId)
+                .flatMap { segment =>
+                  transitionHandler.initializeSegment(dataset, segment).map { _ => segment }
+                }
                 .flatMap { segment =>
                   val (bucket, root) = cloudService.allocatePath(owner, dataset, segment)
                   val copyFiles = req.files.toSeq.map { case (key, fileId) =>
@@ -534,17 +539,11 @@ class DatasetController @Inject() (
             .before {
               datasetDAO.byId(dataset.id).flatMap { dataset =>
                 if (dataset.origin == Origin.Managed) {
-                  val createSchedule = req.schedule match {
+                  req.schedule match {
                     case Some(duration) =>
                       publisher.publish(Message.DatasetSchedule(dataset.id, dataset.updatedAt), duration)
                     case _ => Future.Done
                   }
-                  val createPruner = req.retention match {
-                    case Some(retention) =>
-                      publisher.publish(Message.DatasetPrune(dataset.id, dataset.updatedAt), retention)
-                    case _ => Future.Done
-                  }
-                  Future.join(createSchedule, createPruner).unit
                 } else {
                   Future.Done
                 }

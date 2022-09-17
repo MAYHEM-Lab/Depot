@@ -1,19 +1,23 @@
 package wtf.knc.depot.service
 
-import com.twitter.util.Future
-import javax.inject.{Inject, Singleton}
 import com.twitter.conversions.StorageUnitOps._
-import wtf.knc.depot.dao.{DatasetDAO, EntityDAO, NotebookDAO, SegmentDAO}
-import wtf.knc.depot.model.{SegmentState, Transition, Trigger}
+import com.twitter.util.Future
+import wtf.knc.depot.dao._
+import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.NotebookStore
-import wtf.knc.depot.service.Storage.NotebookFootprint
+import wtf.knc.depot.service.Storage.{NotebookFootprint, SegmentFootprint}
+
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.{Inject, Singleton}
 
 object Storage {
   case class SegmentFootprint(
     datasetOwner: String,
     datasetTag: String,
     segmentVersion: Long,
-    bytes: Long
+    bytes: Long,
+    state: SegmentState,
+    cause: RetentionCause
   )
 
   case class NotebookFootprint(
@@ -39,6 +43,7 @@ class QuotaService @Inject() (
   entityDAO: EntityDAO,
   datasetDAO: DatasetDAO,
   segmentDAO: SegmentDAO,
+  retentionDAO: RetentionDAO,
   notebookStore: NotebookStore,
   notebookDAO: NotebookDAO
 ) {
@@ -47,51 +52,49 @@ class QuotaService @Inject() (
     Future.value(QuotaAllocation(Storage.Allocation(512.megabytes.bytes)))
   }
 
-  // TODO: need to check datasets that the user materialized from others, as part of an export, integration, or notebook
-  def consumedQuota(entityId: Long): Future[QuotaUsage] = entityDAO.byId(entityId).flatMap {
-    case Some(entity) =>
-      val notebooks = notebookDAO.byOwner(entityId).flatMap { notebooks =>
-        val byNotebook = notebooks.map { notebook =>
-          notebookStore.size(notebook.tag).map { size => NotebookFootprint(notebook.tag, size) }
-        }
-        Future.collect(byNotebook)
+  private def notebookFootprints(entityId: Long): Future[Seq[NotebookFootprint]] = {
+    notebookDAO.byOwner(entityId).flatMap { notebooks =>
+      val byNotebook = notebooks.map { notebook =>
+        notebookStore.size(notebook.tag).map { size => NotebookFootprint(notebook.tag, size) }
       }
-
-      val segments = datasetDAO.byOwner(entityId).flatMap { datasets =>
-        val byDataset = datasets.map { dataset =>
-          segmentDAO.list(dataset.id).flatMap { segments =>
-            val bySegment = segments.map { segment =>
-              if (segment.state == SegmentState.Materialized) {
-                segmentDAO.data(segment.id).flatMap {
-                  case Some(data) =>
-                    segmentDAO.transitions(segment.id).map { transitions =>
-                      val isOwned = transitions.values.exists {
-                        case Transition.Await(Trigger.Manual(_, `entityId`)) => true
-                        case Transition.Materialize(_, Trigger.Manual(_, `entityId`)) => true
-                        case _ => false
-                      }
-                      if (isOwned) {
-                        Some(Storage.SegmentFootprint(entity.name, dataset.tag, segment.version, data.size))
-                      } else {
-                        None
-                      }
-                    }
-                  case _ => Future.value(None)
-                }
-              } else {
-                Future.value(None)
-              }
-            }
-            Future.collect(bySegment).map(_.flatten)
-          }
-        }
-        Future.collect(byDataset).map(_.flatten)
-      }
-      Future.join(notebooks, segments).map { case (n, s) =>
-        val storage = Storage.Usage(n.map(_.bytes).sum + s.map(_.bytes).sum, s, n)
-        QuotaUsage(storage)
-      }
-    case _ => throw new IllegalArgumentException
+      Future.collect(byNotebook)
+    }
   }
+
+  private def segmentFootprints(entityId: Long): Future[Seq[SegmentFootprint]] = {
+    val entityCache = new ConcurrentHashMap[Long, Future[Entity]]()
+    val segmentCache = new ConcurrentHashMap[Long, Future[Segment]]()
+    val datasetCache = new ConcurrentHashMap[Long, Future[Dataset]]()
+    retentionDAO.listByHolder(entityId).flatMap { retentions =>
+      val loadRetentions = retentions.map { r =>
+        val loadSegment = segmentCache.computeIfAbsent(r.segmentId, segmentDAO.byId)
+        val loadDataset = loadSegment.flatMap { segment =>
+          datasetCache.computeIfAbsent(segment.datasetId, datasetDAO.byId)
+        }
+        val loadOwner = loadDataset.flatMap { dataset =>
+          entityCache.computeIfAbsent(dataset.ownerId, i => entityDAO.byId(i).map(_.get))
+        }
+        Future.join(loadSegment, loadDataset, loadOwner).map { case (segment, dataset, owner) =>
+          SegmentFootprint(owner.name, dataset.tag, segment.version, r.shallowSize, r.state, r.cause)
+        }
+      }
+      Future.collect(loadRetentions)
+    }
+  }
+
+  def consumedQuota(entityId: Long): Future[QuotaUsage] =
+    for {
+      notebooks <- notebookFootprints(entityId)
+      segments <- segmentFootprints(entityId)
+    } yield {
+      val segmentBytes = segments
+        .groupBy(s => (s.datasetOwner, s.datasetTag, s.segmentVersion))
+        .values
+        .map(_.head.bytes)
+        .sum
+      val notebookBytes = notebooks.map(_.bytes).sum
+      val storage = Storage.Usage(notebookBytes + segmentBytes, segments, notebooks)
+      QuotaUsage(storage)
+    }
 
 }

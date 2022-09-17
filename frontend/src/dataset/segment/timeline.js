@@ -71,19 +71,21 @@ export default function SegmentTimeline() {
                 {history.map(({time, to, message}) => {
                     return <Feed.Event key={time + '-label'}>
                         <Feed.Content>
-                            <Feed.Date>
-                                <div className='segment-history-entry'>
-                                    <div className='segment-history-date'>
-                                        {util.formatTime(parseInt(time))}
+                            <Feed.Summary>
+                                <Feed.Date>
+                                    <div className='segment-history-entry'>
+                                        <div className='segment-history-date'>
+                                            {util.formatTime(parseInt(time))}
+                                        </div>
+                                        <div className='segment-history-state'>
+                                            <SegmentState segmentState={to}/>
+                                        </div>
                                     </div>
-                                    <div className='segment-history-state'>
-                                        <SegmentState segmentState={to}/>
-                                    </div>
-                                </div>
-                            </Feed.Date>
-                            <div className='segment-history-description'>
-                                {message}
-                            </div>
+                                </Feed.Date>
+                                <span className='segment-history-description'>
+                                    {message}
+                                </span>
+                            </Feed.Summary>
                         </Feed.Content>
                     </Feed.Event>
                 })}

@@ -120,12 +120,13 @@ class DatasetCreator extends Component {
         triggered: !!this.props.payload.touchedDatasets.length,
         manual: true,
         visibility: 'Public',
+        storageClass: 'Guaranteed',
         clusterAffinity: null,
         frequency: null
     }
 
     createDataset = async () => {
-        const {tag, triggered, frequency, retention, visibility, owner, description} = this.state
+        const {tag, triggered, frequency, retention, visibility, owner, description, storageClass} = this.state
         const {payload: {touchedDatasets, resultType}, notebook} = this.props
         this.setState({loading: true})
         try {
@@ -140,6 +141,7 @@ class DatasetCreator extends Component {
                 content,
                 resultType,
                 visibility,
+                storageClass,
                 touchedDatasets,
                 !triggered,
                 frequency ? `${parseInt(frequency)}.minutes` : null,

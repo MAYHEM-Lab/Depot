@@ -237,6 +237,7 @@ export default {
             datatype: datatype,
             visibility: visibility,
             origin: 'Unmanaged',
+            storage_class: 'Transient',
             triggers: [],
             isolated: true,
             schedule: null,
@@ -257,6 +258,7 @@ export default {
         content,
         datatype,
         visibility,
+        storageClass,
         sources,
         isolated,
         frequency,
@@ -267,6 +269,7 @@ export default {
             content: content,
             datatype: datatype,
             visibility: visibility,
+            storage_class: storageClass,
             origin: 'Managed',
             triggers: sources.map(({entity, tag}) => {
                 return {

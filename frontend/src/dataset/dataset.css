@@ -234,13 +234,15 @@
     display: flex;
     align-items: center;
 }
-
 .segment-history-state {
+    width: 90px;
 }
+
 
 .segment-history-date {
     padding-right: 15px;
     font-size: 15px;
+    width: 180px;
 }
 
 .segment-history-description {

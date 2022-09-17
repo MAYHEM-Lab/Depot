@@ -18,6 +18,7 @@ trait DatasetDAO {
     origin: Origin,
     datatype: Datatype,
     visibility: Visibility,
+    storageClass: StorageClass,
     retention: Option[Duration],
     schedule: Option[Duration],
     clusterAffinity: Option[Long]
@@ -48,6 +49,7 @@ class MysqlDatasetDAO @Inject() (
     Origin.parse(r.stringOrNull("origin")),
     objectMapper.parse[Datatype](r.stringOrNull("datatype")),
     Visibility.parse(r.stringOrNull("visibility")),
+    StorageClass.parse(r.stringOrNull("storage_class")),
     r.getLong("retention_ms").map(_.toLong.millis),
     r.getLong("schedule_ms").map(_.toLong.millis),
     r.getLong("preferred_cluster").map(_.toLong),
@@ -91,6 +93,7 @@ class MysqlDatasetDAO @Inject() (
     origin: Origin,
     datatype: Datatype,
     visibility: Visibility,
+    storageClass: StorageClass,
     retention: Option[Duration],
     schedule: Option[Duration],
     clusterAffinity: Option[Long]
@@ -98,7 +101,7 @@ class MysqlDatasetDAO @Inject() (
     client.transaction { tx =>
       val now = Time.now.inMillis
       val columns =
-        "tag, description, owner_id, datatype, origin, visibility, retention_ms, schedule_ms, preferred_cluster, created_at, updated_at"
+        "tag, description, owner_id, datatype, origin, visibility, storage_class, retention_ms, schedule_ms, preferred_cluster, created_at, updated_at"
       val params = columns.split(',').map(_ => "?").mkString(", ")
       for {
         _ <- tx
@@ -112,6 +115,7 @@ class MysqlDatasetDAO @Inject() (
             objectMapper.writeValueAsString(datatype),
             origin.name,
             visibility.name,
+            storageClass.name,
             retention.map(_.inMillis),
             schedule.map(_.inMillis),
             clusterAffinity,

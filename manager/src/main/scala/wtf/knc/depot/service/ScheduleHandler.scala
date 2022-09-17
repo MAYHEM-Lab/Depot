@@ -42,19 +42,24 @@ class ScheduleHandler @Inject() (
   }
 
   def handleSchedule(datasetId: Long, updatedAt: Long): Future[Unit] = {
-    datasetDAO.byId(datasetId).flatMap { dataset =>
-      if (dataset.updatedAt == updatedAt) {
-        logger.info(s"Handling schedule timeout for ${dataset.tag} [$datasetId]")
+    datasetDAO
+      .byId(datasetId)
+      .flatMap { dataset =>
+        if (dataset.updatedAt == updatedAt) {
+          logger.info(s"Handling schedule timeout for ${dataset.tag} [$datasetId]")
 
-        for {
-          _ <- materializeLatest(datasetId)
-          _ <- createNew(datasetId)
-          _ <- dataset.schedule.fold(Future.Done)(publisher.publish(Message.DatasetSchedule(datasetId, updatedAt), _))
-        } yield ()
-      } else {
-        logger.info(s"Ignoring old schedule timeout for ${dataset.tag}")
-        Future.Done
+          for {
+            _ <- materializeLatest(datasetId)
+            _ <- createNew(datasetId)
+            _ <- dataset.schedule.fold(Future.Done)(publisher.publish(Message.DatasetSchedule(datasetId, updatedAt), _))
+          } yield ()
+        } else {
+          logger.info(s"Ignoring old schedule timeout for ${dataset.tag}")
+          Future.Done
+        }
       }
-    }
+      .handle { case _: NoSuchElementException =>
+        logger.info(s"Ignoring message for dataset $datasetId")
+      }
   }
 }

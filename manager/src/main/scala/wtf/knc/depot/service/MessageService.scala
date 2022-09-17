@@ -13,8 +13,6 @@ class MessageService @Inject() (
   subscriber: Subscriber
 ) extends Logging
   with Closable {
-  private case class InvalidTransitionException() extends Exception
-
   private val subscription = subscriber.subscribe {
     case Message.SegmentTransition(segmentId, transition) =>
       transitionHandler.handleTransition(segmentId, transition)
