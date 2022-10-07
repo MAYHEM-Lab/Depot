@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 [[ $(id -u) -eq 0 ]] || exec sudo /bin/bash -c "$(printf '%q ' "$BASH_SOURCE" "$@")"
 
+systemctl disable apache2
+systemctl stop apache2
+
 set -e
 
-mkdir /var/lib/containerd && echo '/dev/vdb /var/lib/containerd auto defaults 0 0 ' >> /etc/fstab  && mount -a && ll /var/lib/containerd
+#mkdir /var/lib/containerd && echo '/dev/vdb /var/lib/containerd auto defaults 0 0 ' >> /etc/fstab  && mount -a && ll /var/lib/containerd
 
 ufw disable
 
 sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
 swapoff -a
-
-systemctl disable apache2
-systemctl stop apache2
 
 apt update
 apt -y install apt-transport-https ca-certificates curl

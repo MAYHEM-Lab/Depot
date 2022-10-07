@@ -11,10 +11,16 @@ upstream notebook {
     server notebook-router:9995;
 }
 
+upstream upload {
+    server s3.poc.aristotle.ucsb.edu:443;
+}
+
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     underscores_in_headers on;
+    proxy_http_version 1.1;
+    proxy_buffering off;
 
     server_name Depot;
 
@@ -28,16 +34,40 @@ server {
         proxy_read_timeout 180s;
 
         # websocket headers
-        proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
         proxy_set_header X-Scheme $scheme;
 
         proxy_buffering off;
+        proxy_request_buffering off;
+
+        proxy_buffers 8 2m;
+        proxy_buffer_size 10m;
+        proxy_busy_buffers_size 10m;
+
+        client_max_body_size 200M;
+        client_body_buffer_size 200M;
     }
 
     location /api {
         proxy_pass http://api/api;
+        proxy_set_header Connection "";
+        client_max_body_size 200M;
+        client_body_buffer_size 200M;
+    }
+
+    location /upload/ {
+        client_max_body_size 200M;
+        client_body_buffer_size 200M;
+
+        proxy_pass http://upload/;
+        proxy_request_buffering off;
+        proxy_set_header Host s3.poc.aristotle.ucsb.edu;
+
+        proxy_read_timeout 1800;
+        proxy_connect_timeout 1800;
+        proxy_send_timeout 1800;
+        send_timeout 1800;
     }
 
     location / {

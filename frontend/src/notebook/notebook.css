@@ -2,8 +2,16 @@
   flex: 1 1 auto;
 }
 
+:root {
+  --jp-code-font-size: 14px
+}
+
 .p-BoxPanel {
   height: 100%;
+}
+
+.jp-OutputArea-output {
+  overflow: auto !important;
 }
 
 .cluster-select-header {
@@ -24,6 +32,7 @@
 }
 
 .strategy-container {
+  width: 100% !important;
   padding-top: 1em;
   padding-left: 2em;
   text-align: left;
@@ -53,7 +62,7 @@
 
 .strategy-button {
   text-align: center !important;
-  width: 90px;
+  width: 110px;
 }
 
 .notebook-creator-menu {
@@ -130,9 +139,4 @@
 
 .notebook-tab-button:hover {
   background-color: lightgray;
-}
-
-
-.jp-NotebookPanel {
-  border-top: 1px solid #e0e0e0;
 }

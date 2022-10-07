@@ -7,12 +7,17 @@ import {editorServices} from '@jupyterlab/codemirror';
 import {RenderMimeRegistry, standardRendererFactories} from "@jupyterlab/rendermime";
 import {BoxPanel, Widget} from "@lumino/widgets";
 
-import '@jupyterlab/application/style/index.css';
-import '@jupyterlab/codemirror/style/index.css';
-import '@jupyterlab/completer/style/index.css';
-import '@jupyterlab/notebook/style/index.css';
+import '@jupyterlab/ui-components/style/index.js';
+import '@jupyterlab/cells/style/index.js';
+
 import '@jupyterlab/theme-light-extension/style/theme.css';
+
 import './notebook.css'
+import '@jupyterlab/notebook/style/index.js';
+import {managerPlugin, baseWidgetsPlugin, controlWidgetsPlugin, outputWidgetPlugin} from "@jupyter-widgets/jupyterlab-manager/lib/plugin";
+
+import "@jupyter-widgets/controls"
+import "@jupyter-widgets/jupyterlab-manager"
 
 import API from '../api'
 import {Button, Dropdown, Icon, Menu} from "semantic-ui-react";
@@ -25,70 +30,19 @@ import NotebookStatus from "./notebook_status";
 import NotebookTitle from "./notebook_title";
 import NotebookCreator from "./notebook_creator";
 
-import DatasetWidget from "./dataset_creator";
+import DatasetWidget from "./dataset_widget";
+import {CodeCell} from "@jupyterlab/cells";
+import {ClusterSelector} from "../cluster/selector";
+import {Signal} from "@lumino/signaling";
 
-function ClusterSelector({onSelect, user}) {
-    const [clusters, setClusters] = useState(null)
-    const [selected, setSelected] = useState(null)
-    useEffect(async () => {
-        const {clusters} = await API.getAuthorizedClusters()
-        const clusterInfo = clusters.map(({cluster, owner}) => {
-            return {
-                tag: cluster.tag,
-                id: cluster.id,
-                entityName: owner.name,
-                entityType: owner.type,
-                status: cluster.status
-            }
-        })
-        setClusters(clusterInfo)
-    }, [user])
-
-    const select = (cluster) => {
-        setSelected(cluster.id)
-        onSelect(cluster.entityName, cluster.tag)
-    }
-
-    const renderItem = (cluster) => {
-        if (!cluster) return null
-        const active = cluster.status === 'Active'
-        return <Dropdown.Item disabled={!active} key={cluster.id} value={cluster.id} onClick={() => select(cluster)}>
-            <div className='cluster-select-header'>
-                <Icon name='server'/>
-                <span className='cluster-select-title'>
-                    {cluster.tag}
-                    </span>
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name={cluster.entityType === 'User' ? 'user' : 'building'}/>
-                {cluster.entityName}
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name='circle' color={active ? 'green' : 'orange'}/>
-                {cluster.status}
-            </div>
-        </Dropdown.Item>
-    }
-
-    const trigger = <Button
-        primary
-        className='notebook-action-button'
-        icon='add'
-    />
-
-    return <Dropdown trigger={trigger} icon={null} direction='left' loading={!clusters} value={selected}>
-        <Dropdown.Menu>
-            <Dropdown.Item disabled text={<span>Select a notebook executor</span>}/>
-            {clusters ? clusters.map((cluster) => renderItem(cluster)) : null}
-        </Dropdown.Menu>
-    </Dropdown>
-}
+const leaflet = require('jupyter-leaflet')
 
 export default class NotebookFrame extends Component {
     boundElement = null
     anonymousNotebookId = 0
     panel = new BoxPanel()
 
+    tracker = null
     docRegistry = null
     contentsManager = null
 
@@ -102,7 +56,7 @@ export default class NotebookFrame extends Component {
 
     constructor(props) {
         super(props)
-        const {location, navigator} = props
+        const {location, navigator, user} = props
 
         SessionAPI.listRunning = () => Promise.resolve([])
         KernelAPI.listRunning = () => Promise.resolve([])
@@ -142,7 +96,29 @@ export default class NotebookFrame extends Component {
         this.docRegistry.addModelFactory(mFactory)
         this.docRegistry.addWidgetFactory(wFactory)
 
-        const drive = new DepotDrive(null)
+        this.tracker = {
+            forEach: () => {},
+            widgetAdded: new Signal(this)
+        }
+
+        const mockApp = {
+            docRegistry: this.docRegistry,
+            commands: [],
+            shell: {widgets: () => []}
+        }
+
+        const pluginRegistry = managerPlugin.activate(mockApp, rendermime, this.tracker, null, null, null, null)
+        baseWidgetsPlugin.activate(mockApp, pluginRegistry)
+        controlWidgetsPlugin.activate(mockApp, pluginRegistry)
+        outputWidgetPlugin.activate(mockApp, pluginRegistry)
+
+        pluginRegistry.registerWidget({
+            name: 'jupyter-leaflet',
+            version: leaflet.version,
+            exports: leaflet
+        });
+
+        const drive = new DepotDrive(null, user)
 
         this.contentsManager = new ContentsManager({
             defaultDrive: drive
@@ -155,7 +131,27 @@ export default class NotebookFrame extends Component {
             this.panel.dispose()
             this.state.notebooks.forEach((nb) => nb.widget.dispose())
         })
-        // this.openNotebook('kerem/d', 'kerem', 'knc-test-cluster')
+        this.props.eventBus.on('notebook', this.handleEvent)
+    }
+
+    componentWillUnmount() {
+        const {notebooks} = this.state
+        notebooks.forEach((nb) => nb.widget.dispose())
+        if (this.panel.isAttached) {
+            Widget.detach(this.panel)
+        }
+        if (this.boundElement) {
+            this.boundElement.removeEventListener('keydown', this.notebookKeyHandler)
+            this.boundElement = null
+        }
+        this.props.eventBus.remove('notebook', this.handleEvent)
+    }
+
+    handleEvent = (message) => {
+        if (message.action === 'open') {
+            const {notebookId, entityName, clusterName} = message
+            this.openNotebook(notebookId, entityName, clusterName)
+        }
     }
 
     getDocManager = (entity, cluster) => {
@@ -183,15 +179,27 @@ export default class NotebookFrame extends Component {
         return docManager
     }
 
+    openWidget = (entity, cluster, id) => {
+        const widget = this.getDocManager(entity, cluster).open(id)
+        this.tracker.widgetAdded.emit(widget)
+        widget.toolbar.dispose()
+        widget.content.contentFactory.createCodeCell = (editor) => {
+            const cell = new CodeCell(editor).initializeState();
+            const widgets = cell.children()._source
+            widgets[1].children()._source[0].dispose()
+            widgets[3].children()._source[0].dispose()
+            return cell
+        }
+        return widget
+    }
+
     newNotebook = (entity, cluster) => {
         const {notebooks, activeNotebookIdx} = this.state
         if (activeNotebookIdx !== -1) {
             notebooks[activeNotebookIdx].widget.hide()
         }
-        console.log('Opening new')
         const id = '#anonymous_' + this.anonymousNotebookId++
-        const widget = this.getDocManager(entity, cluster).open(id)
-        widget.toolbar.dispose()
+        const widget = this.openWidget(entity, cluster, id)
         const notebook = {
             widget: widget,
             entity: entity,
@@ -219,8 +227,7 @@ export default class NotebookFrame extends Component {
 
         let notebook
         if (existingIdx === -1) {
-            const widget = this.getDocManager(entity, cluster).open(notebookId)
-            widget.toolbar.dispose()
+            const widget = this.openWidget(entity, cluster, notebookId)
             this.panel.addWidget(widget)
 
             notebook = {
@@ -244,7 +251,6 @@ export default class NotebookFrame extends Component {
         const {notebooks, activeNotebookIdx} = this.state
 
         const notebook = notebooks.find((nb) => nb.id === notebookId)
-        console.log('Closing notebook ', notebook)
 
         if (notebook) {
             notebook.widget.dispose()
@@ -264,10 +270,8 @@ export default class NotebookFrame extends Component {
     saveOrCreate = async (notebook) => {
         const {user} = this.props
         if (notebook.local) {
-            console.log('Creating notebook')
             this.setState({notebookCreator: true})
         } else {
-            console.log('Saving notebook')
             await API.saveNotebook(user.name, notebook.id, notebook.widget.content.model.toJSON())
         }
     }
@@ -276,7 +280,6 @@ export default class NotebookFrame extends Component {
         const {user} = this.props
         const notebook = this.state.notebooks.find((nb) => nb.id === notebookId)
         if (notebook) {
-            console.log(`Saving anonymous notebook ${notebookId} as ${tag}`)
             await API.createNotebook(user.name, tag)
             const existingNotebooks = this.state.notebooks
             const existingNotebook = existingNotebooks.find((nb) => nb.id === notebookId)
@@ -320,18 +323,6 @@ export default class NotebookFrame extends Component {
         }
     }
 
-    componentWillUnmount() {
-        const {notebooks} = this.state
-        notebooks.forEach((nb) => nb.widget.dispose())
-        if (this.panel.isAttached) {
-            Widget.detach(this.panel)
-        }
-        if (this.boundElement) {
-            this.boundElement.removeEventListener('keydown', this.notebookKeyHandler)
-            this.boundElement = null
-        }
-    }
-
     render() {
         const {notebooks, activeNotebookIdx, notebookCreator} = this.state
         const activeNotebook = (activeNotebookIdx === -1) ? null : notebooks[activeNotebookIdx]
@@ -370,9 +361,15 @@ export default class NotebookFrame extends Component {
                             />
                         )}
                     </Menu>
-
-                    <ClusterSelector user={user} onSelect={(e, t) => this.newNotebook(e, t)}/>
-
+                    <ClusterSelector
+                        user={user}
+                        trigger={<Button
+                            primary
+                            className='notebook-action-button'
+                            icon='add'
+                        />}
+                        onSelect={(e, t) => this.newNotebook(e, t)}
+                    />
                 </div>
                 {activeNotebook ? <NotebookCreator
                     notebookId={activeNotebook.id}

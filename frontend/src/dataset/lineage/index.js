@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import ReactFlow, {Controls, Handle, Position} from "react-flow-renderer";
 import {Container, Header, Loader} from "semantic-ui-react";
 import {Link} from "react-router-dom";
-import DatasetIcon from "../dataset_icon";
+import DatasetIcon from "../icon";
 
 function DataNode({data: {renderLink, renderNode, entry, primary}}) {
     const color = entry.valid ? (primary ? 'blue' : 'black') : 'red';
@@ -27,7 +27,7 @@ const nodeTypes = {dataset: DataNode}
 export default function DataGraph({graphPromise, renderLink, renderNode, getNodeId, centerId}) {
     const [graph, setGraph] = useState(null)
     useEffect(() => {
-        graphPromise.then(result => {
+        graphPromise().then(result => {
             const nodes = []
             const edges = []
             const loop = (entry, parent = null, x = 0, y = 0,) => {
@@ -60,18 +60,20 @@ export default function DataGraph({graphPromise, renderLink, renderNode, getNode
                             stroke: entry.valid ? null : 'red'
                         },
                         markerEnd: {
-                            type: entry.valid ? 'arrowclosed' : null
+                            type: entry.valid ? 'arrowclosed' : null,
+                            width: 5,
+                            height: 5
                         }
                     })
                 }
                 entry.from.forEach((elem, idx) =>
-                    loop(elem, entry, x - 250, idx * 100)
+                    loop(elem, entry, x - 250, y + (idx * 100) - (Math.floor(entry.from.length / 2) * 100))
                 )
             }
             loop(result)
             setGraph({nodes: nodes, edges: edges})
         })
-    }, [graphPromise])
+    }, [centerId])
 
     return (
         <Container className='dataset-lineage-container'>

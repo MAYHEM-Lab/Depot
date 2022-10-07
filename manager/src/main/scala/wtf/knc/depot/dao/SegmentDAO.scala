@@ -1,10 +1,15 @@
 package wtf.knc.depot.dao
 
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
-import com.twitter.util.Future
 import com.twitter.util.jackson.ScalaObjectMapper
+import com.twitter.util.{Future, Time}
 import javax.inject.{Inject, Singleton}
+import wtf.knc.depot.dao.SegmentDAO.SegmentNotFoundException
 import wtf.knc.depot.model._
+
+object SegmentDAO {
+  case class SegmentNotFoundException(segmentId: Long) extends Exception
+}
 
 trait SegmentDAO extends DAO {
   def byVersion(datasetId: Long, version: Long)(implicit ctx: Ctx = defaultCtx): Future[Option[Segment]]
@@ -13,21 +18,31 @@ trait SegmentDAO extends DAO {
   def inputs(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[SegmentInput]]
   def outputs(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[SegmentInput]]
 
-  def data(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[SegmentData]
+  def data(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Option[SegmentData]]
   def setData(segmentId: Long, data: SegmentData)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def list(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Segment]]
 
   def count(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
-  def size(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
 
   def make(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
   def addInputs(segmentId: Long, inputs: Map[String, Long])(implicit ctx: Ctx = defaultCtx): Future[Unit]
+
+  def delete(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def transitions(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Map[Long, Transition]]
   def recordTransition(segmentId: Long, transition: Transition)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def update(segmentId: Long, to: SegmentState)(fx: Ctx => (SegmentState, SegmentState) => Future[Unit]): Future[Unit]
+
+  def mkRef(segmentId: Long, who: Long, state: SegmentState, shallowSize: Long, cause: RetentionCause)(implicit
+    ctx: Ctx = defaultCtx
+  ): Future[Unit]
+  def updateRefState(segmentId: Long, state: SegmentState)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def updateRefSize(segmentId: Long, shallowSize: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def releaseRef(retainer: Retainer)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def refsByHolder(who: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
+  def refsBySegment(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
 }
 
 @Singleton
@@ -60,6 +75,60 @@ class MysqlSegmentDAO @Inject() (
     r.longOrZero("updated_at")
   )
 
+  private def extractRef(row: Row): Retainer = Retainer(
+    row.longOrZero("segment_id"),
+    row.longOrZero("holder"),
+    SegmentState.parse(row.stringOrNull("state")),
+    row.longOrZero("shallow_size"),
+    objectMapper.parse[RetentionCause](row.stringOrNull("cause"))
+  )
+
+  override def mkRef(
+    segmentId: Long,
+    who: Long,
+    state: SegmentState,
+    shallowSize: Long,
+    cause: RetentionCause
+  )(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("INSERT INTO segment_retentions(segment_id, holder, state, shallow_size, cause) VALUES (?, ?, ?, ?, ?)")
+      .modify(segmentId, who, state.name, shallowSize, objectMapper.writeValueAsString(cause))
+      .unit
+  }
+
+  override def updateRefState(segmentId: Long, state: SegmentState)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("UPDATE segment_retentions SET state = ? where segment_id = ?")
+      .modify(state.name, segmentId)
+      .unit
+  }
+
+  override def updateRefSize(segmentId: Long, size: Long)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("UPDATE segment_retentions SET shallow_size = ? where segment_id = ?")
+      .modify(size, segmentId)
+      .unit
+  }
+
+  override def releaseRef(retainer: Retainer)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("DELETE FROM segment_retentions WHERE segment_id = ? AND holder = ? AND cause = ?")
+      .modify(retainer.segmentId, retainer.holder, objectMapper.writeValueAsString(retainer.cause))
+      .unit
+  }
+
+  override def refsByHolder(who: Long)(implicit ctx: MysqlCtx): Future[Seq[Retainer]] = ctx { tx =>
+    tx
+      .prepare("SELECT * FROM segment_retentions WHERE holder = ? ORDER BY shallow_size DESC")
+      .select(who)(extractRef)
+  }
+
+  override def refsBySegment(segmentId: Long)(implicit ctx: MysqlCtx): Future[Seq[Retainer]] = ctx { tx =>
+    tx
+      .prepare("SELECT * FROM segment_retentions WHERE segment_id = ? ORDER BY shallow_size DESC")
+      .select(segmentId)(extractRef)
+  }
+
   override def byId(segmentId: Long)(implicit ctx: MysqlCtx): Future[Segment] = ctx { tx =>
     tx.prepare("SELECT * FROM segments WHERE id = ?")
       .select(segmentId)(extractSegment)
@@ -87,10 +156,10 @@ class MysqlSegmentDAO @Inject() (
       .select(segmentId)(extractInput)
   }
 
-  override def data(segmentId: Long)(implicit ctx: MysqlCtx): Future[SegmentData] = ctx { tx =>
+  override def data(segmentId: Long)(implicit ctx: MysqlCtx): Future[Option[SegmentData]] = ctx { tx =>
     tx.prepare("SELECT * FROM segment_data WHERE segment_id = ?")
       .select(segmentId)(extractData)
-      .map(_.head)
+      .map(_.headOption)
   }
 
   override def setData(segmentId: Long, data: SegmentData)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
@@ -106,15 +175,8 @@ class MysqlSegmentDAO @Inject() (
       .map(_.head)
   }
 
-  override def size(datasetId: Long)(implicit ctx: MysqlCtx): Future[Long] = ctx { tx =>
-    tx.prepare(
-      "SELECT CAST(SUM(segment_data.size) AS UNSIGNED INTEGER) AS size FROM segment_data JOIN segments ON segments.id = segment_data.segment_id AND segments.dataset_id = ?"
-    ).select(datasetId)(_.longOrZero("size"))
-      .map(_.head)
-  }
-
   override def make(datasetId: Long)(implicit ctx: MysqlCtx): Future[Long] = ctx { tx =>
-    val now = System.currentTimeMillis
+    val now = Time.now.inMillis
     tx.prepare("SELECT CAST(MAX(version) AS UNSIGNED INTEGER) AS max_version FROM segments WHERE dataset_id = ?")
       .select(datasetId)(_.longOrZero("max_version"))
       .map(_.head)
@@ -156,13 +218,19 @@ class MysqlSegmentDAO @Inject() (
       .map(_.toMap)
   }
 
+  override def delete(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit] = ctx { tx =>
+    tx.prepare("DELETE FROM segments WHERE id = ?")
+      .modify(segmentId)
+      .unit
+  }
+
   def recordTransition(segmentId: Long, transition: Transition)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
     tx
       .prepare("INSERT INTO segment_transitions(segment_id, transition, created_at) VALUES(?, ?, ?)")
       .modify(
         segmentId,
         objectMapper.writeValueAsString(transition),
-        System.currentTimeMillis
+        Time.now.inMillis
       )
       .unit
   }
@@ -177,11 +245,11 @@ class MysqlSegmentDAO @Inject() (
       currentState <- session
         .prepare("SELECT state FROM segments WHERE id = ?")
         .select(segmentId)(r => SegmentState.parse(r.stringOrNull("state")))
-        .map(_.head)
+        .map(_.headOption.getOrElse(throw SegmentNotFoundException(segmentId)))
       _ <- session.transaction { tx =>
         tx
-          .prepare("UPDATE segments SET state = ? WHERE id = ?")
-          .modify(to.name, segmentId)
+          .prepare("UPDATE segments SET state = ?, updated_at = ? WHERE id = ?")
+          .modify(to.name, Time.now.inMillis, segmentId)
           .unit
           .before(fx(MuxMysqlCtx(tx))(currentState, to))
       }

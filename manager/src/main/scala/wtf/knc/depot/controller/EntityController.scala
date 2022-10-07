@@ -1,23 +1,24 @@
 package wtf.knc.depot.controller
 
-import com.twitter.finagle.http.{Request, Response, Status}
 import com.twitter.finatra.http.Controller
-import com.twitter.finatra.http.annotations.RouteParam
-import com.twitter.finatra.http.annotations.QueryParam
+import com.twitter.finatra.http.annotations.{QueryParam, RouteParam}
 import com.twitter.inject.Logging
 import com.twitter.util.Future
 import javax.inject.{Inject, Provider, Singleton}
 import wtf.knc.depot.controller.EntityController._
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO}
 import wtf.knc.depot.model.{Entity, Role}
-import wtf.knc.depot.service.CloudService
+import wtf.knc.depot.service.{CloudService, QuotaAllocation, QuotaService, QuotaUsage}
 
 object EntityController {
   case class ListRequest(
     @QueryParam searchUser: Option[String],
     @QueryParam searchAll: Option[String],
-    @QueryParam authorized: Option[Boolean]
+    @QueryParam authorized: Option[Boolean],
+    @QueryParam id: Option[Long]
   )
+
+  case class QuotaResponse(allocation: QuotaAllocation, usage: QuotaUsage)
 
   case class OrganizationAddRequest(@RouteParam entityName: String, memberName: String, role: Role) extends EntityRoute
   case class OrganizationRemoveRequest(@RouteParam entityName: String, memberName: String) extends EntityRoute
@@ -39,16 +40,16 @@ class EntityController @Inject() (
   override val entityDAO: EntityDAO,
   override val clusterDAO: ClusterDAO,
   override val authProvider: Provider[Option[Auth]],
-  cloudService: CloudService
+  cloudService: CloudService,
+  quotaService: QuotaService
 ) extends Controller
   with Logging
+  with EntityRequests
   with Authentication {
 
-  private def withOrganization[A <: EntityRoute](role: Option[Role])(
-    fn: (A, Entity.Organization) => Future[Response]
-  ): A => Future[Response] = withEntity[A](role) {
-    case (req, org: Entity.Organization) => fn(req, org)
-    case _ => Future.value(response.badRequest)
+  private def organization(role: Option[Role])(implicit req: EntityRoute): Future[Entity] = entity(role).map {
+    case org: Entity.Organization => org
+    case _ => throw response.notFound.toException
   }
 
   prefix("/api/entity") {
@@ -68,6 +69,11 @@ class EntityController @Inject() (
           case _ => Future.value(response.forbidden)
         }
 
+      } else if (req.id.isDefined) {
+        entityDAO.byId(req.id.get).map {
+          case Some(entity) => response.ok(entity)
+          case _ => response.notFound
+        }
       } else if (req.searchUser.isDefined) {
         entityDAO.searchUsers(req.searchUser.get).map { entities =>
           response.ok(EntitiesResponse(entities))
@@ -82,16 +88,13 @@ class EntityController @Inject() (
     }
 
     prefix("/:entity_name") {
-      get("/?") { req: EntityRequest =>
-        entityDAO.byName(req.entityName).map {
-          case Some(entity) => response.ok(entity)
-          case _ => response.notFound
-        }
+      get("/?") { implicit req: EntityRequest =>
+        entity(None).map(response.ok)
       }
 
-      post("/?") {
-        withAuth[EntityRequest] {
-          case req -> Some(Auth.User(userId)) =>
+      post("/?") { implicit req: EntityRequest =>
+        client match {
+          case Some(Auth.User(userId)) =>
             entityDAO.byId(userId).flatMap {
               case Some(creator) =>
                 for {
@@ -101,27 +104,33 @@ class EntityController @Inject() (
                 } yield response.ok
               case _ => Future.value(response.notFound)
             }
-          case _ => Future.value(response.forbidden)
+          case _ => response.forbidden
         }
       }
 
-      get("/manage") { req: EntityRequest =>
-        val asAdmin = withEntity[EntityRequest](Some(Role.Owner)) { (_, entity) =>
-          Future.value(response.ok(entity))
-        }(req)
-        asAdmin.map { proxy =>
-          if (proxy.status == Status.Ok) {
-            response.ok(ManageResponse(true))
-          } else {
-            response.ok(ManageResponse(false))
-          }
+      get("/quota") { implicit req: EntityRequest =>
+        entity(Some(Role.Owner)).flatMap { entity =>
+          Future
+            .join(
+              quotaService.allocatedQuota(entity.id),
+              quotaService.consumedQuota(entity.id)
+            )
+            .map { Function.tupled(QuotaResponse) }
+            .map(response.ok)
         }
+      }
+
+      get("/manage") { implicit req: EntityRequest =>
+        entity(Some(Role.Owner))
+          .map { _ => true }
+          .handle { _ => false }
+          .map { a => response.ok(ManageResponse(a)) }
       }
 
       prefix("/members") {
-        get("/?") { req: EntityRequest =>
-          entityDAO.byName(req.entityName).flatMap {
-            case Some(org: Entity.Organization) =>
+        get("/?") { implicit req: EntityRequest =>
+          entity(None).flatMap {
+            case org: Entity.Organization =>
               entityDAO.members(org.id).flatMap { members =>
                 val loadMembers = members.map { case (id, role) =>
                   entityDAO.byId(id).map {
@@ -137,8 +146,8 @@ class EntityController @Inject() (
           }
         }
 
-        delete("/?") {
-          withOrganization[OrganizationRemoveRequest](Some(Role.Owner)) { (req, org) =>
+        delete("/?") { implicit req: OrganizationRemoveRequest =>
+          organization(Some(Role.Owner)).flatMap { org =>
             entityDAO.byName(req.memberName).flatMap {
               case Some(user: Entity.User) =>
                 entityDAO.members(org.id).flatMap { members =>
@@ -156,8 +165,8 @@ class EntityController @Inject() (
           }
         }
 
-        post("/?") {
-          withOrganization[OrganizationAddRequest](Some(Role.Owner)) { (req, org) =>
+        post("/?") { implicit req: OrganizationAddRequest =>
+          organization(Some(Role.Owner)).flatMap { org =>
             entityDAO.byName(req.memberName).flatMap {
               case Some(user: Entity.User) =>
                 cloudService.addMember(user.name, org.name).before {

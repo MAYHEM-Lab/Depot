@@ -1,7 +1,11 @@
-import {Loader, Segment, Table} from "semantic-ui-react";
+import {Button, Loader, Segment, Table} from "semantic-ui-react";
 import util from "../util";
-import React, {useEffect, useState} from "react";
+import React, {useContext, useEffect, useState} from "react";
 import API from "../api";
+import {EventContext} from "../common/bus";
+import {Link} from "react-router-dom";
+import {UserContext} from "../auth";
+import {ClusterSelector} from "../cluster/selector";
 
 export default function ListNotebooks({entity}) {
     const [notebooks, setNotebooks] = useState(null)
@@ -11,25 +15,47 @@ export default function ListNotebooks({entity}) {
     return <NotebookTable entity={entity} notebooks={notebooks}/>
 }
 
-function NotebookTable({notebooks}) {
+function NotebookTable({entity, notebooks}) {
+    const eventBus = useContext(EventContext)
+    const user = useContext(UserContext)
     return <Segment basic>
         <Loader active={!notebooks}/>
         <Table celled singleLine>
             <Table.Header>
-                <Table.Row>
+                <Table.Row textAlign='center'>
                     <Table.HeaderCell>Notebook</Table.HeaderCell>
                     <Table.HeaderCell>Creation Date</Table.HeaderCell>
                     <Table.HeaderCell>Last Modified</Table.HeaderCell>
+                    <Table.HeaderCell/>
                 </Table.Row>
             </Table.Header>
             <Table.Body>
                 {notebooks ? notebooks.map(notebook =>
-                    <Table.Row key={notebook.tag}>
+                    <Table.Row textAlign='center' key={notebook.tag}>
                         <Table.Cell>
-                            {notebook.tag}
+                            <code>
+                                {notebook.tag}
+                            </code>
                         </Table.Cell>
                         <Table.Cell>{util.formatTime(notebook.created_at)}</Table.Cell>
                         <Table.Cell>{util.formatTime(notebook.updated_at)}</Table.Cell>
+                        <Table.Cell>
+                            <Button size='tiny' as={Link} to={`${entity.name}/notebooks/${notebook.tag}`}
+                            >View</Button>
+                            <ClusterSelector
+                                user={user}
+                                trigger={<Button
+                                    size='tiny'
+                                    primary
+                                >Open</Button>}
+                                onSelect={(e, t) => eventBus.dispatch('notebook', {
+                                    action: 'open',
+                                    notebookId: notebook.tag,
+                                    entityName: e,
+                                    clusterName: t
+                                })}
+                            />
+                        </Table.Cell>
                     </Table.Row>
                 ) : null}
             </Table.Body>

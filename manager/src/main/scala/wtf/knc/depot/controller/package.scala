@@ -2,7 +2,6 @@ package wtf.knc.depot
 
 import com.twitter.finagle
 import com.twitter.finagle.SimpleFilter
-import com.twitter.finagle.http.cookie.SameSite
 import com.twitter.finagle.http.{Cookie, Request, Response}
 import com.twitter.finatra.http.Controller
 import com.twitter.finatra.http.annotations.RouteParam
@@ -23,6 +22,8 @@ package object controller {
     val entityDAO: EntityDAO
     val clusterDAO: ClusterDAO
     val authProvider: Provider[Option[Auth]]
+
+    def client: Option[Auth] = authProvider.get()
 
     def isMember(orgId: Long, entityId: Long, role: Role): Future[Boolean] =
       entityDAO.members(orgId).map { members =>
@@ -49,8 +50,7 @@ package object controller {
     def withAuth[A](
       fn: (A, Option[Auth]) => Future[Response]
     ): A => Future[Response] = (req: A) => {
-      val auth = authProvider.get
-      fn(req, auth)
+      fn(req, client)
     }
 
     def withEntity[A <: EntityRoute](role: Option[Role])(

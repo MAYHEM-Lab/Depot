@@ -17,9 +17,7 @@ function createPanel(result) {
     const rendermime = new RenderMimeRegistry({
         initialFactories: standardRendererFactories
     })
-
-    const mFactory = new NotebookModelFactory({
-    })
+    const mFactory = new NotebookModelFactory({})
     const wFactory = new NotebookWidgetFactory({
         name: 'Notebook',
         modelName: 'notebook',
@@ -41,7 +39,7 @@ function createPanel(result) {
     docRegistry.addModelFactory(mFactory)
     docRegistry.addWidgetFactory(wFactory)
 
-    const drive = new DepotDrive(result)
+    const drive = new DepotDrive(result, null)
 
     const contentsManager = new ContentsManager({
         defaultDrive: drive
@@ -66,7 +64,7 @@ function createPanel(result) {
     widget.content.contentFactory.createCodeCell = (editor) => {
         const cell = new CodeCell(editor).initializeState();
         const widgets = cell.children()._source
-        cell.inputArea._prompt.addClass('dataset-code-readonly')
+        cell.inputArea._prompt.dispose()
         const inputWidget = widgets[1]
         const inputCollapserWidget = inputWidget.children()._source[0]
         inputCollapserWidget.dispose()

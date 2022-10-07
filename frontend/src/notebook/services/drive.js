@@ -4,14 +4,14 @@ import {NotebookModel} from "@jupyterlab/notebook/lib/model";
 import {DepotKernel} from "./kernel";
 
 export default class DepotDrive extends Drive {
-    constructor(staticContent) {
+    constructor(staticContent, user) {
         super();
         this.staticContent = staticContent
+        this.user = user
     }
 
     get = async (path) => {
         if (this.staticContent) {
-            console.log('Serving static notebook')
             return {
                 format: 'json',
                 type: 'notebook',
@@ -19,7 +19,6 @@ export default class DepotDrive extends Drive {
             }
         }
         if (path.startsWith('#anonymous')) {
-            console.log('Creating new notebook')
 
             const nb = new NotebookModel()
             nb.sharedModel.updateMetadata({
@@ -31,8 +30,7 @@ export default class DepotDrive extends Drive {
                 content: nb.toJSON()
             }
         }
-        const [entity, tag] = path.split('/', 2)
-        const content = await API.readNotebook(entity, tag)
+        const content = await API.readNotebook(this.user.name, path)
         return {
             format: 'json',
             type: 'notebook',

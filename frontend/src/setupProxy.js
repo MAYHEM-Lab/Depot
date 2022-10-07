@@ -9,6 +9,13 @@ module.exports = function(app) {
     );
 
     app.use(
+        createProxyMiddleware("/upload", {
+            target: 'http://localhost',
+            changeOrigin: true,
+        })
+    );
+
+    app.use(
         createProxyMiddleware("/notebook", {
             target: 'http://localhost',
             ws: true,

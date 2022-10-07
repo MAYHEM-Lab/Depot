@@ -1,4 +1,5 @@
-const DEPOT_URL = "/api/";
+const DEPOT_URL = "/api/"
+const UPLOAD_URL = "/upload/"
 
 const handleErrors = (response) => {
     if (!response.ok) throw new Error(response.statusText)
@@ -38,6 +39,12 @@ export default {
 
     readNotebook: (owner, tag) => {
         return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/contents`)
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
+    getHomePage: () => {
+        return fetch(`${DEPOT_URL}home`)
             .then(handleErrors)
             .then(response => response.json())
     },
@@ -126,6 +133,20 @@ export default {
             .then(response => response.json())
     },
 
+    bundleSegment: (owner, tag, version) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/segments/${version}/download`)
+            .then(handleErrors)
+            .then(response => response.text())
+    },
+
+    materializeSegment: (owner, tag, version) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/segments/${version}/materialize`, {
+            method: 'POST'
+        })
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
     getHistory: (owner, tag, version) => {
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/segments/${version}/history`)
             .then(handleErrors)
@@ -138,12 +159,124 @@ export default {
             .then(response => response.json())
     },
 
-    createDataset: (owner, tag, description, content, datatype, visibility, sources, isolated, frequency) => {
+    updateDataset: (owner, tag, description, visibility, frequency, retention) => {
+        const body = {
+            description: description,
+            visibility: visibility,
+            schedule: frequency,
+            retention: retention
+        }
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        })
+            .then(handleErrors)
+    },
+
+    startFileUpload: (owner, parts, contentType) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/files`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({parts: parts, content_type: contentType})
+        })
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
+    uploadFileChunk: (owner, uploadId, filename, partNumber, file, signal, uploadProgress, persistProgress) => {
+        const formData = new FormData()
+        formData.append('file', file)
+        return fetch(`${UPLOAD_URL}entity/${owner}/files/${filename}?upload_id=${uploadId}&part_number=${partNumber}`, {
+            method: 'PUT',
+            signal: signal,
+            headers: {'Content-Type': 'application/octet-stream'},
+            body: file
+        })
+            .then(handleErrors)
+            .then(async (response) => {
+                const reader = response.body.getReader()
+                let closed = false
+                while (!closed) {
+                    const {value, done} = await reader.read()
+                    closed = done
+                    if (value) {
+                        const text = Buffer.from(value).toString('utf8').split('data: ')[1]
+                        const data = JSON.parse(text)
+                        persistProgress(data)
+                    }
+                }
+            })
+    },
+
+    deleteFileUpload: (owner, uploadId, filename) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/files/${filename}`, {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upload_id: uploadId})
+        })
+            .then(handleErrors)
+    },
+
+    commitFileUpload: (owner, uploadId, filename) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/files/${filename}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({upload_id: uploadId})
+        })
+            .then(handleErrors)
+    },
+
+    createUnmanagedSegment: (owner, tag, files) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/upload`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({files: files})
+        })
+            .then(handleErrors)
+    },
+
+    createUnmanagedDataset: (owner, tag, description, datatype, visibility) => {
+        const body = {
+            description: description,
+            content: {},
+            datatype: datatype,
+            visibility: visibility,
+            origin: 'Unmanaged',
+            storage_class: 'Weak',
+            triggers: [],
+            isolated: true,
+            schedule: null,
+            retention: null
+        }
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        })
+            .then(handleErrors)
+    },
+
+    createManagedDataset: (
+        owner,
+        tag,
+        description,
+        content,
+        datatype,
+        visibility,
+        storageClass,
+        sources,
+        isolated,
+        frequency,
+        retention
+    ) => {
         const body = {
             description: description,
             content: content,
             datatype: datatype,
             visibility: visibility,
+            storage_class: storageClass,
+            origin: 'Managed',
             triggers: sources.map(({entity, tag}) => {
                 return {
                     entity_name: entity,
@@ -151,7 +284,8 @@ export default {
                 }
             }),
             isolated: isolated,
-            schedule: frequency
+            schedule: frequency,
+            retention: retention
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',
@@ -216,8 +350,26 @@ export default {
             .then(handleErrors)
     },
 
+    getQuota: (name) => {
+        return fetch(`${DEPOT_URL}entity/${name}/quota`)
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
+    getClusters: (name) => {
+        return fetch(`${DEPOT_URL}clusters/${name}`)
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
     getAuthorizedClusters: () => {
         return fetch(`${DEPOT_URL}clusters`)
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
+    getEntityById: (id) => {
+        return fetch(`${DEPOT_URL}entity?id=${id}`)
             .then(handleErrors)
             .then(response => response.json())
     },

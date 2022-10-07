@@ -3,7 +3,7 @@ import {Form, Icon, Input, Label} from "semantic-ui-react";
 
 export class ValidatingInput extends Component {
     VALIDATE_PERIOD = 2000
-    DELAY_PERIOD = 500
+    DELAY_PERIOD = 250
 
     // Dispatch async validations no more than a certain rate
     validateTask = null
@@ -11,7 +11,6 @@ export class ValidatingInput extends Component {
 
     // Don't dispatch async validations while user is still typing
     delayTask = null
-    lastDelay = new Date(0)
 
     state = {
         data: '',

@@ -1,10 +1,10 @@
 import React, {useEffect, useState} from 'react';
-import {useNavigate, useOutletContext} from "react-router-dom";
+import {useNavigate, useOutletContext} from 'react-router-dom';
 
-import API from '../api'
-import util from '../util.js'
-import {Loader, Table} from "semantic-ui-react";
-import SegmentState from "./segment_state";
+import API from '../../api'
+import util from '../../util'
+import {Loader, Table} from 'semantic-ui-react';
+import SegmentState from './state';
 
 export default function SegmentList() {
     const {entity, dataset} = useOutletContext();

@@ -43,9 +43,9 @@ object MysqlModule extends TwitterModule {
     .withCredentials(username, password)
     .withDatabase(database)
     .withSessionPool
-    .minSize(4)
+    .minSize(16)
     .withSessionPool
-    .maxSize(10)
+    .maxSize(32)
     .newRichClient(s"$host:$port", "mysql-client")
 
 }

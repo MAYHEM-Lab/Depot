@@ -2,7 +2,7 @@ package wtf.knc.depot.dao
 
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
 import com.twitter.inject.Logging
-import com.twitter.util.Future
+import com.twitter.util.{Future, Time}
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.model.{Entity, Role}
 
@@ -56,7 +56,7 @@ class MysqlEntityDAO @Inject() (
 
   override def createOrganization(name: String, ownerId: Long, accessKey: String, secretKey: String): Future[Long] =
     client.transaction { tx =>
-      val now = System.currentTimeMillis
+      val now = Time.now.inMillis
       for {
         _ <- tx
           .prepare(
@@ -113,7 +113,7 @@ class MysqlEntityDAO @Inject() (
 
   override def createWithGithub(username: String, githubId: Long, accessKey: String, secretKey: String): Future[Long] =
     client.transaction { tx =>
-      val now = System.currentTimeMillis
+      val now = Time.now.inMillis
       tx
         .prepare(
           "INSERT INTO entities(name, type, access_key, secret_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"

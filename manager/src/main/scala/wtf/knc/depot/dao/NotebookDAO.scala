@@ -1,7 +1,7 @@
 package wtf.knc.depot.dao
 
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
-import com.twitter.util.Future
+import com.twitter.util.{Future, Time}
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.model.Notebook
 
@@ -9,6 +9,7 @@ trait NotebookDAO {
   def byTag(tag: String): Future[Option[Notebook]]
   def byOwner(ownerId: Long): Future[Seq[Notebook]]
   def create(tag: String, ownerId: Long): Future[Unit]
+  def recent(limit: Int): Future[Seq[Notebook]]
 }
 
 @Singleton
@@ -23,6 +24,9 @@ class MysqlNotebookDAO @Inject() (
     Notebook(tag, owner, created_at, updated_at)
   }
 
+  override def recent(limit: Int): Future[Seq[Notebook]] =
+    client.select(s"SELECT * FROM notebooks ORDER BY created_at DESC LIMIT $limit")(extract)
+
   override def byOwner(ownerId: Long): Future[Seq[Notebook]] = client
     .prepare("SELECT * FROM notebooks WHERE owner_id = ?")
     .select(ownerId)(extract)
@@ -33,7 +37,7 @@ class MysqlNotebookDAO @Inject() (
     .map(_.headOption)
 
   override def create(tag: String, ownerId: Long): Future[Unit] = client.transaction { tx =>
-    val now = System.currentTimeMillis
+    val now = Time.now.inMillis
     tx
       .prepare("INSERT INTO notebooks(tag, owner_id, created_at, updated_at) VALUES(?, ?, ?, ?)")
       .modify(tag, ownerId, now, now)

@@ -1,7 +1,7 @@
 package wtf.knc.depot.dao
 
 import com.twitter.finagle.mysql.{Client, Row, Transactions}
-import com.twitter.util.Future
+import com.twitter.util.{Future, Time}
 import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.model._
 
@@ -55,7 +55,7 @@ class MysqlClusterDAO @Inject() (
   }
 
   override def create(ownerId: Long, tag: String): Future[Long] = client.transaction { tx =>
-    val now = System.currentTimeMillis
+    val now = Time.now.inMillis
     for {
       _ <- tx
         .prepare("INSERT INTO clusters(owner_id, tag, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
@@ -85,7 +85,7 @@ class MysqlClusterDAO @Inject() (
       .flatMap { _ =>
         tx
           .prepare("UPDATE clusters SET status = ?, updated_at = ? WHERE id = ?")
-          .modify(ClusterStatus.Active.name, System.currentTimeMillis, clusterId)
+          .modify(ClusterStatus.Active.name, Time.now.inMillis, clusterId)
           .unit
       }
   }
