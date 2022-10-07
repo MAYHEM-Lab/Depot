@@ -29,12 +29,14 @@ object Datatype {
       def parse(str: String): ColumnType = str match {
         case "String" => ColumnType.String
         case "Integer" => ColumnType.Integer
+        case "Long" => ColumnType.Long
         case "Double" => ColumnType.Double
         case "Float" => ColumnType.Float
       }
 
       case object String extends ColumnType("String")
       case object Integer extends ColumnType("Integer")
+      case object Long extends ColumnType("Long")
       case object Double extends ColumnType("Double")
       case object Float extends ColumnType("Float")
     }

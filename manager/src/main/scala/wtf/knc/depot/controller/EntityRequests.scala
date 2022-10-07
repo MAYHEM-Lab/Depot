@@ -12,38 +12,15 @@ object EntityRequests {
   case class EntityRequest(@RouteParam entityName: String) extends EntityRoute
 }
 
-trait EntityRequests { self: Controller =>
+trait EntityRequests { self: Controller with Authentication =>
   val entityDAO: EntityDAO
   val clusterDAO: ClusterDAO
   val authProvider: Provider[Option[Auth]]
 
-  def _client: Option[Auth] = authProvider.get()
-
-  private def isMember(orgId: Long, entityId: Long, role: Role): Future[Boolean] =
-    entityDAO.members(orgId).map { members =>
-      val authorized = if (role == Role.Member) {
-        members.contains(entityId)
-      } else {
-        members.get(entityId).contains(role)
-      }
-      authorized
-    }
-
-  private def authorizeEntity(entityId: Long, role: Role, entity: Entity): Future[Boolean] = entity match {
-    case user: Entity.User =>
-      Future.value(user.id == entityId)
-    case org: Entity.Organization =>
-      if (org.id == entityId) {
-        Future.value(true)
-      } else {
-        isMember(org.id, entityId, role)
-      }
-  }
-
   def entity(role: Option[Role])(implicit req: EntityRoute): Future[Entity] =
     entityDAO.byName(req.entityName).flatMap {
       case Some(entity) =>
-        (_client, role) match {
+        (client, role) match {
           case (_, None) => Future.value(entity)
           case (None, Some(_)) => throw response.unauthorized.toException
           case (Some(Auth.Admin), _) => Future.value(entity)

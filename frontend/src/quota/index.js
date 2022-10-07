@@ -1,4 +1,4 @@
-import {Accordion, List, Segment} from "semantic-ui-react";
+import {Accordion, Header, List, Segment} from "semantic-ui-react";
 import React, {useEffect, useState} from "react";
 import API from "../api";
 import './quota.css'
@@ -28,25 +28,57 @@ function NotebookEntry({entity, notebook}) {
     </>
 }
 
-function SegmentEntry({entity, causes}) {
-    return JSON.stringify(causes)
+
+function CauseEntry({cause}) {
+    if (cause.type === 'TTL') {
+        return <span>Retained by dataset TTL</span>
+    } else if (cause.type === 'Dependency') {
+        const {owner_name, dataset_name, segment_version} = cause
+        return <span>Retained by dependent segment <Link to={`/${owner_name}/datasets/${dataset_name}/segments/${segment_version}`}>
+            <code>{`${owner_name}/${dataset_name}:${segment_version}`}</code>
+        </Link></span>
+    } else if (cause.type === 'Manual') {
+        const {entity_name} = cause
+        return <span>Retained manually by <Link to={`/${entity_name}`}>
+            <code>{entity_name}</code>
+        </Link></span>
+    }
 }
 
-function DatasetEntry({entity, segments}) {
+function SegmentEntry({entity, owner, dataset, version, state, causes}) {
+    return <div className='accordion-meta'>
+        Segment <Link to={{pathname: `/${owner}/datasets/${dataset}/segments/${version}`}}>
+        <code>{owner}/{dataset}:{version}</code>
+    </Link>
+        <SegmentState segmentState={state}/>
+        <List bulleted>
+            {causes.map((cause, idx) => {
+                return <List.Item key={idx}>
+                    <CauseEntry cause={cause}/>
+                </List.Item>
+            })}
+        </List>
+    </div>
+}
+
+function DatasetEntry({entity, owner, dataset, segments}) {
     const segmentPanels = segments.map(({version, size, state, causes}) => {
         return {
             key: version,
             title: {
                 content: <span>
-                    Version {version} - {util.formatBytes(size)}
+                    Version {version}
+                    <span className='accordion-title-info'>{causes.length} reference{causes.length === 1 ? '' : 's'} - {util.formatBytes(size)}</span>
             </span>
             },
-            content: {content: <SegmentEntry entity={entity} causes={causes}/>}
+            content: {content: <SegmentEntry entity={entity} owner={owner} dataset={dataset} version={version} state={state} causes={causes}/>}
         }
     })
     return <>
-        <div>
-            Dataset kc/test
+        <div className='accordion-meta'>
+            Dataset <Link to={{pathname: `/${owner}/datasets/${dataset}`}}>
+            <code>{owner}/{dataset}</code>
+        </Link>
         </div>
         <Accordion styled panels={segmentPanels}/>
     </>
@@ -56,8 +88,8 @@ function NotebooksListing({entity, notebooks}) {
     return <List>
         {notebooks
             .sort((a, b) => b.bytes - a.bytes)
-            .map(nb => <List.Item>
-                <NotebookEntry entity={entity} key={nb.notebook_tag} notebook={nb}/>
+            .map(nb => <List.Item key={nb.notebook_tag}>
+                <NotebookEntry entity={entity} notebook={nb}/>
             </List.Item>)
         }
     </List>
@@ -90,13 +122,15 @@ function SegmentsListing({entity, segments}) {
         })
         return {owner: owner, dataset: dataset, segments: versions}
     })
-    console.log(grouped)
 
     const datasetPanels = grouped.map(({owner, dataset, segments}) => {
+        const totalSize = segments.map(s => s.size).reduce((sum, s) => sum + s)
         return {
             key: `${owner}/${dataset}`,
-            title: {content: `${owner}/${dataset}`},
-            content: {content: <DatasetEntry entity={entity} segments={segments}/>}
+            title: {
+                content: <span><code>{owner}/{dataset}</code> <span className='accordion-title-info'>{segments.length} segments - {util.formatBytes(totalSize)}</span></span>
+            },
+            content: {content: <DatasetEntry entity={entity} owner={owner} dataset={dataset} segments={segments}/>}
         }
     })
     return <Accordion panels={datasetPanels} styled/>
@@ -111,8 +145,12 @@ function StorageQuotaItem({color, name, size}) {
 }
 
 function Storage(entity, quota) {
+    const uniqueSegments = [...new Map(
+        quota.usage.storage.segments.map(s => [s.dataset_owner + '/' + s.dataset_tag + '/' + s.segment_version, s.bytes])
+    ).values()];
+
+    const datasets = uniqueSegments.reduce((a, b) => a + b, 0)
     const notebooks = quota.usage.storage.notebooks.map(n => n.bytes).reduce((a, b) => a + b, 0)
-    const datasets = quota.usage.storage.segments.map(n => n.bytes).reduce((a, b) => a + b, 0)
 
     const size = quota.allocation.storage.allocated_bytes
 

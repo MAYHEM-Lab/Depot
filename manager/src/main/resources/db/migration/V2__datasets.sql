@@ -6,7 +6,7 @@ CREATE TABLE datasets (
     origin ENUM('Managed', 'Unmanaged'),
     datatype TEXT NOT NULL,
     visibility ENUM('Public', 'Private'),
-    storage_class ENUM('Guaranteed', 'Transient'),
+    storage_class ENUM('Strong', 'Weak'),
     retention_ms BIGINT NULL,
     schedule_ms BIGINT NULL,
     preferred_cluster BIGINT NULL,

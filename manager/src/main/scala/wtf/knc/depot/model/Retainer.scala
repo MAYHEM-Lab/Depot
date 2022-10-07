@@ -5,9 +5,9 @@ import com.fasterxml.jackson.annotation.{JsonSubTypes, JsonTypeInfo}
 /*
 Two modes of retention-class:
 
-A: Guaranteed - each newly announced segment forces the dataset's owner to hold
+A: Strong - each newly announced segment forces the dataset's owner to hold
 
-B: Transient  -
+B: Weak  -
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes(

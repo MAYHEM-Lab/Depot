@@ -40,6 +40,13 @@ server {
 
         proxy_buffering off;
         proxy_request_buffering off;
+
+        proxy_buffers 8 2m;
+        proxy_buffer_size 10m;
+        proxy_busy_buffers_size 10m;
+
+        client_max_body_size 200M;
+        client_body_buffer_size 200M;
     }
 
     location /api {

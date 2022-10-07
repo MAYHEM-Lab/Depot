@@ -43,6 +43,12 @@ export default {
             .then(response => response.json())
     },
 
+    getHomePage: () => {
+        return fetch(`${DEPOT_URL}home`)
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
     getDatasets: (owner) => {
         return fetch(`${DEPOT_URL}entity/${owner}/datasets`)
             .then(handleErrors)
@@ -237,7 +243,7 @@ export default {
             datatype: datatype,
             visibility: visibility,
             origin: 'Unmanaged',
-            storage_class: 'Transient',
+            storage_class: 'Weak',
             triggers: [],
             isolated: true,
             schedule: null,

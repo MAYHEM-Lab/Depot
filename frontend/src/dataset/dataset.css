@@ -121,6 +121,23 @@
     right: 0;
 }
 
+.duration-selector-label > .ui.selection.dropdown {
+    min-width: 4em !important;
+    border: none !important;
+}
+
+.duration-selector-label {
+    padding: 0 !important;
+}
+
+.dataset-create-step-meta {
+    height: 80px;
+}
+
+.dataset-create-step.hidden {
+    display: none;
+}
+
 .p-BoxPanel {
     height: 100%;
 }

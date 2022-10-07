@@ -6,23 +6,23 @@ import API from '../../api'
 import {Feed, Loader} from "semantic-ui-react";
 import SegmentState from './state';
 
-async function Trigger(trigger) {
+async function Trigger(trigger, verb) {
     const {type} = trigger
     if (type === 'Creation') {
-        return 'Triggered by creation of dataset'
+        return (verb || 'Triggered') + ' by creation of dataset'
     }
     if (type === 'Scheduled') {
-        return 'Triggered by schedule'
+        return (verb || 'Triggered') + ' by schedule'
     }
     if (type === 'Manual') {
         const user = await API.getEntityById(trigger.who)
-        return <>{'Triggered manually by '}<Link to={`/${user.name}`}>{user.name}</Link></>
+        return <>{(verb || 'Triggered') + ' by '}<Link to={`/${user.name}`}>{user.name}</Link></>
     }
     if (type === 'Upstream') {
-        return 'Triggered by upstream segment'
+        return (verb || 'Triggered') + ' by upstream segment'
     }
     if (type === 'Downstream') {
-        return 'Triggered by downstream segment'
+        return (verb || 'Triggered') + ' by downstream segment'
     }
     return null;
 }
@@ -35,8 +35,13 @@ async function Awaiting({trigger}) {
     return Trigger(trigger)
 }
 
-async function Materialized({trigger}) {
-    return Trigger(trigger)
+async function Materialized({trigger, shallow_size, retained_size}) {
+    const message = await Trigger(trigger, 'Uploaded')
+    return <>
+        {message}
+        <br/>
+        <span>Shallow size {util.formatBytes(shallow_size)} - Retained size {util.formatBytes(retained_size)}</span>
+    </>
 }
 
 async function Unknown() {

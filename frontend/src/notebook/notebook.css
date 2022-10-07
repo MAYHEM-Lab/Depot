@@ -32,6 +32,7 @@
 }
 
 .strategy-container {
+  width: 100% !important;
   padding-top: 1em;
   padding-left: 2em;
   text-align: left;
@@ -61,7 +62,7 @@
 
 .strategy-button {
   text-align: center !important;
-  width: 90px;
+  width: 110px;
 }
 
 .notebook-creator-menu {

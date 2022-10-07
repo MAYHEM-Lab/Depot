@@ -41,5 +41,6 @@ object Transition {
   case class Await(trigger: Trigger) extends Transition(SegmentState.Awaiting)
   case class Enqueue() extends Transition(SegmentState.Queued)
   case class Transform() extends Transition(SegmentState.Transforming)
-  case class Materialize(data: SegmentData, trigger: Trigger) extends Transition(SegmentState.Materialized)
+  case class Materialize(data: SegmentData, trigger: Trigger, shallowSize: Long, retainedSize: Long)
+    extends Transition(SegmentState.Materialized)
 }

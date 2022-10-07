@@ -10,6 +10,8 @@ from jupyter_server.serverapp import ServerApp
 from jupyter_server.services.kernels.handlers import MainKernelHandler, KernelHandler, KernelActionHandler, ZMQChannelsHandler
 from jupyter_server.services.kernels.kernelmanager import MappingKernelManager
 from jupyter_server.services.sessions.handlers import SessionHandler, SessionRootHandler
+from jupyterlab.handlers.extension_manager_handler import ExtensionManager
+from jupyterlab.labapp import LabPathApp
 from jupyterlab_server import LabServerApp
 from traitlets import Unicode, Instance
 
@@ -18,6 +20,11 @@ from depot_client import DepotClient
 def _jupyter_server_extension_points():
     return [{'module': __name__, 'app': DepotServerApp}]
 
+def _jupyter_labextension_paths():
+    return [{
+        'src': 'labextension',
+        'dest': '@jupyter-widgets/jupyterlab-manager'
+    }]
 
 faulthandler.enable(all_threads=True)
 
@@ -53,7 +60,7 @@ class DepotKernelSpecManager(KernelSpecManager):
 
 
 class DepotServerApp(LabServerApp):
-    load_other_extensions = False
+    load_other_extensions = True
     open_browser = False
     name = 'depot_notebook_server'
     app_name = 'Depot Notebook Server'
@@ -88,6 +95,9 @@ class DepotServerApp(LabServerApp):
     ServerApp.kernel_spec_manager_class = DepotKernelSpecManager
 
     def initialize_handlers(self):
+        print(self.extra_labextensions_path)
+        print(self.labextensions_path)
+        print(self.labextensions_url)
         DepotKernelSpecManager.spec = build_kernel_spec(self.depot_endpoint, self.access_key)
         depot_client = DepotClient(self.depot_endpoint, self.access_key)
         cluster = depot_client.cluster()

@@ -4,8 +4,8 @@ import React, {useContext, useEffect, useState} from "react";
 import API from "../api";
 import {EventContext} from "../common/bus";
 import {Link} from "react-router-dom";
-import {ClusterSelector} from "./notebook_frame";
 import {UserContext} from "../auth";
+import {ClusterSelector} from "../cluster/selector";
 
 export default function ListNotebooks({entity}) {
     const [notebooks, setNotebooks] = useState(null)

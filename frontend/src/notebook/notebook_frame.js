@@ -14,6 +14,10 @@ import '@jupyterlab/theme-light-extension/style/theme.css';
 
 import './notebook.css'
 import '@jupyterlab/notebook/style/index.js';
+import {managerPlugin, baseWidgetsPlugin, controlWidgetsPlugin, outputWidgetPlugin} from "@jupyter-widgets/jupyterlab-manager/lib/plugin";
+
+import "@jupyter-widgets/controls"
+import "@jupyter-widgets/jupyterlab-manager"
 
 import API from '../api'
 import {Button, Dropdown, Icon, Menu} from "semantic-ui-react";
@@ -26,65 +30,19 @@ import NotebookStatus from "./notebook_status";
 import NotebookTitle from "./notebook_title";
 import NotebookCreator from "./notebook_creator";
 
-import DatasetWidget from "./dataset_creator";
+import DatasetWidget from "./dataset_widget";
 import {CodeCell} from "@jupyterlab/cells";
+import {ClusterSelector} from "../cluster/selector";
+import {Signal} from "@lumino/signaling";
 
-export function ClusterSelector({onSelect, user, trigger}) {
-    const [clusters, setClusters] = useState(null)
-    const [selected, setSelected] = useState(null)
-    useEffect(async () => {
-        const {clusters} = await API.getAuthorizedClusters()
-        const clusterInfo = clusters.map(({cluster, owner}) => {
-            return {
-                tag: cluster.tag,
-                id: cluster.id,
-                entityName: owner.name,
-                entityType: owner.type,
-                status: cluster.status
-            }
-        })
-        setClusters(clusterInfo)
-    }, [user])
-
-    const select = (cluster) => {
-        setSelected(cluster.id)
-        onSelect(cluster.entityName, cluster.tag)
-    }
-
-    const renderItem = (cluster) => {
-        if (!cluster) return null
-        const active = cluster.status === 'Active'
-        return <Dropdown.Item disabled={!active} key={cluster.id} value={cluster.id} onClick={() => select(cluster)}>
-            <div className='cluster-select-header'>
-                <Icon name='server'/>
-                <span className='cluster-select-title'>
-                    {cluster.tag}
-                </span>
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name={cluster.entityType === 'User' ? 'user' : 'building'}/>
-                {cluster.entityName}
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name='circle' color={active ? 'green' : 'orange'}/>
-                {cluster.status}
-            </div>
-        </Dropdown.Item>
-    }
-
-    return <Dropdown trigger={trigger} icon={null} direction='left' loading={!clusters} value={selected}>
-        <Dropdown.Menu>
-            <Dropdown.Item disabled text={<span>Select a notebook executor</span>}/>
-            {clusters ? clusters.map((cluster) => renderItem(cluster)) : null}
-        </Dropdown.Menu>
-    </Dropdown>
-}
+const leaflet = require('jupyter-leaflet')
 
 export default class NotebookFrame extends Component {
     boundElement = null
     anonymousNotebookId = 0
     panel = new BoxPanel()
 
+    tracker = null
     docRegistry = null
     contentsManager = null
 
@@ -137,6 +95,28 @@ export default class NotebookFrame extends Component {
         this.docRegistry = new DepotRegistry()
         this.docRegistry.addModelFactory(mFactory)
         this.docRegistry.addWidgetFactory(wFactory)
+
+        this.tracker = {
+            forEach: () => {},
+            widgetAdded: new Signal(this)
+        }
+
+        const mockApp = {
+            docRegistry: this.docRegistry,
+            commands: [],
+            shell: {widgets: () => []}
+        }
+
+        const pluginRegistry = managerPlugin.activate(mockApp, rendermime, this.tracker, null, null, null, null)
+        baseWidgetsPlugin.activate(mockApp, pluginRegistry)
+        controlWidgetsPlugin.activate(mockApp, pluginRegistry)
+        outputWidgetPlugin.activate(mockApp, pluginRegistry)
+
+        pluginRegistry.registerWidget({
+            name: 'jupyter-leaflet',
+            version: leaflet.version,
+            exports: leaflet
+        });
 
         const drive = new DepotDrive(null, user)
 
@@ -201,6 +181,7 @@ export default class NotebookFrame extends Component {
 
     openWidget = (entity, cluster, id) => {
         const widget = this.getDocManager(entity, cluster).open(id)
+        this.tracker.widgetAdded.emit(widget)
         widget.toolbar.dispose()
         widget.content.contentFactory.createCodeCell = (editor) => {
             const cell = new CodeCell(editor).initializeState();

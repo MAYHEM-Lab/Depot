@@ -1,6 +1,7 @@
-import {Container, Icon, Item, Segment} from "semantic-ui-react";
+import {Container, Item, Segment} from "semantic-ui-react";
 import React, {useEffect, useState} from "react";
 import API from "../api";
+import Cluster from "./index";
 
 export default function ListClusters({entity}) {
     const [clusters, setClusters] = useState(null)
@@ -19,30 +20,14 @@ export default function ListClusters({entity}) {
         setClusters(clusterInfo)
     }, [entity])
     return <Container>
-        <ClusterList entity={entity} clusters={clusters}/>
+        <ClusterList clusters={clusters}/>
     </Container>
 }
 
-function ClusterList({entity, clusters}) {
+function ClusterList({clusters}) {
     const renderItem = (cluster) => {
         if (!cluster) return null
-        const active = cluster.status === 'Active'
-        return <div key={cluster.id}>
-            <div className='cluster-select-header'>
-                <Icon name='server'/>
-                <span className='cluster-select-title'>
-                    {cluster.tag}
-                </span>
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name={cluster.entityType === 'User' ? 'user' : 'building'}/>
-                {cluster.entityName}
-            </div>
-            <div className='cluster-select-description'>
-                <Icon name='circle' color={active ? 'green' : 'orange'}/>
-                {cluster.status}
-            </div>
-        </div>
+        return <Cluster key={cluster.id} cluster={cluster}/>
     }
 
     return <Segment basic loading={!clusters}>

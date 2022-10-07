@@ -23,8 +23,8 @@ export default function DatasetStats({entity, dataset}) {
                     {dataset.origin === 'Managed' ?
                         <>
                             <Table.Row>
-                                <Table.Cell><Header sub>Retention</Header></Table.Cell>
-                                <Table.Cell>{dataset.retention ? util.formatDuration(util.parseDuration(dataset.retention)) : 'Unbounded'}</Table.Cell>
+                                <Table.Cell><Header sub>Segment TTL</Header></Table.Cell>
+                                <Table.Cell>{dataset.retention ? util.formatDuration(util.parseDuration(dataset.retention)) : 'Forever'}</Table.Cell>
                             </Table.Row>
                             <Table.Row>
                                 <Table.Cell><Header sub>Schedule</Header></Table.Cell>
@@ -36,10 +36,6 @@ export default function DatasetStats({entity, dataset}) {
                     <Table.Row>
                         <Table.Cell><Header sub>Segments</Header></Table.Cell>
                         <Table.Cell>{stats.num_segments}</Table.Cell>
-                    </Table.Row>
-                    <Table.Row>
-                        <Table.Cell><Header sub>Total size</Header></Table.Cell>
-                        <Table.Cell>{util.formatBytes(stats.total_size)}</Table.Cell>
                     </Table.Row>
                 </Table.Body>
             </Table>

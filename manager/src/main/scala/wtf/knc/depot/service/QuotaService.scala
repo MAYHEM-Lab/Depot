@@ -1,14 +1,14 @@
 package wtf.knc.depot.service
 
+import java.util.concurrent.ConcurrentHashMap
+
 import com.twitter.conversions.StorageUnitOps._
 import com.twitter.util.Future
+import javax.inject.{Inject, Singleton}
 import wtf.knc.depot.dao._
 import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.service.Storage.{NotebookFootprint, SegmentFootprint}
-
-import java.util.concurrent.ConcurrentHashMap
-import javax.inject.{Inject, Singleton}
 
 object Storage {
   case class SegmentFootprint(
@@ -43,7 +43,6 @@ class QuotaService @Inject() (
   entityDAO: EntityDAO,
   datasetDAO: DatasetDAO,
   segmentDAO: SegmentDAO,
-  retentionDAO: RetentionDAO,
   notebookStore: NotebookStore,
   notebookDAO: NotebookDAO
 ) {
@@ -65,7 +64,7 @@ class QuotaService @Inject() (
     val entityCache = new ConcurrentHashMap[Long, Future[Entity]]()
     val segmentCache = new ConcurrentHashMap[Long, Future[Segment]]()
     val datasetCache = new ConcurrentHashMap[Long, Future[Dataset]]()
-    retentionDAO.listByHolder(entityId).flatMap { retentions =>
+    segmentDAO.refsByHolder(entityId).flatMap { retentions =>
       val loadRetentions = retentions.map { r =>
         val loadSegment = segmentCache.computeIfAbsent(r.segmentId, segmentDAO.byId)
         val loadDataset = loadSegment.flatMap { segment =>

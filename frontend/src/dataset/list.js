@@ -19,15 +19,42 @@ export default function ListDatasets({entity}) {
         return () => eventBus.remove('reload-datasets', invalidate)
     })
 
-    useEffect(() => {
-        API.getDatasets(entity.name).then(setDatasets)
+    useEffect(async () => {
+        const datasets = await API.getDatasets(entity.name)
+        setDatasets(datasets.map(d => {
+            return {...d, owner: entity.name}
+        }))
     }, [entity, trigger])
     return <Container>
-        <DatasetList entity={entity} datasets={datasets}/>
+        <DatasetList full={false} datasets={datasets}/>
     </Container>
 }
 
-function DatasetList({entity, datasets}) {
+export function RecentDatasets() {
+    const [datasets, setDatasets] = useState()
+    const [trigger, setTrigger] = useState(0)
+    const eventBus = useContext(EventContext)
+
+    const invalidate = () => setTrigger(t => t + 1)
+
+    useEffect(() => {
+        eventBus.on('reload-datasets', invalidate)
+        return () => eventBus.remove('reload-datasets', invalidate)
+    })
+
+    useEffect(async () => {
+        const {datasets, notebooks, entities} = await API.getHomePage()
+        setDatasets(datasets.map(d => {
+            const entity = entities.find(e => e.id === d.owner_id)
+            return {...d, owner: entity.name}
+        }))
+    }, [trigger])
+    return <Container>
+        <DatasetList full={true} datasets={datasets}/>
+    </Container>
+}
+
+function DatasetList({full, datasets}) {
     return <Segment basic loading={!datasets}>
         <Item.Group relaxed divided>
             {datasets ? datasets.map(dataset => {
@@ -37,9 +64,14 @@ function DatasetList({entity, datasets}) {
                         <Item.Header>
                             <Header>
                                 <Header.Content>
-                                    <Link to={{pathname: `/${entity.name}/datasets/${dataset.tag}`}}>
-                                        <code>{dataset.tag}</code>
-                                    </Link>
+                                    {full ?
+                                        <>
+                                            <Link to={`/${dataset.owner}`}>{dataset.owner}</Link>
+                                            <span className='resource-divider'>/</span>
+                                        </>
+                                        : null
+                                    }
+                                    <Link to={`/${dataset.owner}/datasets/${dataset.tag}`}>{dataset.tag}</Link>
                                 </Header.Content>
                                 <VisibilityInfo dataset={dataset}/>
                             </Header>

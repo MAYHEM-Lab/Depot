@@ -9,6 +9,7 @@ trait NotebookDAO {
   def byTag(tag: String): Future[Option[Notebook]]
   def byOwner(ownerId: Long): Future[Seq[Notebook]]
   def create(tag: String, ownerId: Long): Future[Unit]
+  def recent(limit: Int): Future[Seq[Notebook]]
 }
 
 @Singleton
@@ -22,6 +23,9 @@ class MysqlNotebookDAO @Inject() (
     val updated_at = r.longOrZero("updated_at")
     Notebook(tag, owner, created_at, updated_at)
   }
+
+  override def recent(limit: Int): Future[Seq[Notebook]] =
+    client.select(s"SELECT * FROM notebooks ORDER BY created_at DESC LIMIT $limit")(extract)
 
   override def byOwner(ownerId: Long): Future[Seq[Notebook]] = client
     .prepare("SELECT * FROM notebooks WHERE owner_id = ?")

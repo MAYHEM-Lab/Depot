@@ -44,3 +44,11 @@
     border-bottom-left-radius: 5px !important;
     border-top-left-radius: 5px !important;
 }
+
+.accordion-title-info {
+    float: right;
+}
+
+.accordion-meta {
+    padding-left: 15px;
+}

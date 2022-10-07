@@ -22,7 +22,6 @@ class TransitionHandler @Inject() (
   datasetDAO: DatasetDAO,
   entityDAO: EntityDAO,
   clusterDAO: ClusterDAO,
-  retentionDAO: RetentionDAO,
   cloudService: CloudService,
   transformClient: TransformDispatcher
 ) extends Logging {
@@ -46,10 +45,12 @@ class TransitionHandler @Inject() (
               logger.error(s"Segment $segmentId has failed: $cause - $error")
               propagateFailure(segmentId, error)
 
-            case SegmentState.Initializing -> Transition.Materialize(data, _) =>
-              logger.info(s"Propagating announcements for segment $segmentId")
-              segmentDAO.setData(segmentId, data).before {
-                propagateAnnouncement(segmentId)
+            case SegmentState.Initializing -> Transition.Materialize(data, _, _, _) =>
+              logger.info(s"Propagating announcements for instantly-materialized segment $segmentId")
+              segmentDAO.updateRefSize(segmentId, data.size).before {
+                segmentDAO.setData(segmentId, data).before {
+                  propagateAnnouncement(segmentId)
+                }
               }
 
             case SegmentState.Initializing -> Transition.Announce(trigger) =>
@@ -68,10 +69,10 @@ class TransitionHandler @Inject() (
               logger.info(s"Segment $segmentId has begun transforming")
               dispatchTransformation(segmentId)
 
-            case SegmentState.Transforming -> Transition.Materialize(data, _) =>
+            case SegmentState.Transforming -> Transition.Materialize(data, _, _, _) =>
               logger.info(s"Segment $segmentId was materialized with $data")
               logger.info(s"Activating waiting segments with segment $segmentId as input")
-              retentionDAO.updateSize(segmentId, data.size).before {
+              segmentDAO.updateRefSize(segmentId, data.size).before {
                 segmentDAO.setData(segmentId, data).before {
                   activateWaiters(segmentId)
                 }
@@ -83,7 +84,7 @@ class TransitionHandler @Inject() (
           }
           work
             .before { segmentDAO.recordTransition(segmentId, transition) }
-            .before { retentionDAO.updateState(segmentId, transition.to) }
+            .before { segmentDAO.updateRefState(segmentId, transition.to) }
             .raiseWithin(10.seconds)(DefaultTimer)
         }
       }
@@ -197,7 +198,7 @@ class TransitionHandler @Inject() (
     }
     val refs = segmentDAO.byId(segmentId).flatMap { segment =>
       datasetDAO.byId(segment.datasetId).flatMap { dataset =>
-        if (dataset.storageClass == StorageClass.Guaranteed) {
+        if (dataset.storageClass == StorageClass.Strong) {
           Future.Done
         } else {
           mkParentReferences(dataset, segment)
@@ -284,7 +285,7 @@ class TransitionHandler @Inject() (
             dataset <- datasetDAO.byId(datasetId)
             _ <- segmentDAO.addInputs(segmentId, segments.toMap)
             _ <-
-              if (dataset.storageClass == StorageClass.Guaranteed) mkParentReferences(dataset, segment)
+              if (dataset.storageClass == StorageClass.Strong) mkParentReferences(dataset, segment)
               else Future.Done
             _ <- mkTtlReferences(dataset, segment)
             _ <- requestTransition(segmentId, Transition.Announce(trigger))
@@ -295,20 +296,21 @@ class TransitionHandler @Inject() (
 
   private def mkParentReferences(dataset: Dataset, segment: Segment)(implicit ctx: segmentDAO.Ctx): Future[Unit] = {
     logger.info(s"Creating parent references for segment $segment of dataset ${dataset.tag}")
-    dependencies(segment).flatMap { parents =>
-      val links = parents.map { parent =>
-        segmentDAO.data(parent.id).flatMap { data =>
-          datasetDAO.byId(parent.datasetId).flatMap { dependency =>
-            entityDAO.byId(dependency.ownerId).flatMap {
-              case Some(owner) =>
-                val cause = RetentionCause.Dependency(owner.name, dependency.tag, parent.version)
-                retentionDAO.create(parent.id, dataset.ownerId, parent.state, data.map(_.size).getOrElse(0), cause)
-              case _ => throw new IllegalArgumentException(s"Unknown owner for $dependency")
+
+    entityDAO.byId(dataset.ownerId).flatMap {
+      case Some(owner) =>
+        val cause = RetentionCause.Dependency(owner.name, dataset.tag, segment.version)
+
+        dependencies(segment).flatMap { parents =>
+          logger.info(s"Found inputs to segment $segment: $parents")
+          val links = parents.map { parent =>
+            segmentDAO.data(parent.id).flatMap { data =>
+              segmentDAO.mkRef(parent.id, dataset.ownerId, parent.state, data.map(_.size).getOrElse(0), cause)
             }
           }
+          Future.join(links)
         }
-      }
-      Future.join(links)
+      case _ => throw new IllegalArgumentException(s"Unknown owner for $dataset")
     }
   }
 
@@ -317,19 +319,24 @@ class TransitionHandler @Inject() (
     val ttl = RetentionCause.TTL(Time.now.inMillis)
     val loadSize = segmentDAO.data(segment.id).map(_.map(_.size).getOrElse(0L))
     loadSize.flatMap { size =>
-      retentionDAO.create(segment.id, dataset.ownerId, segment.state, size, ttl)
+      segmentDAO.mkRef(segment.id, dataset.ownerId, segment.state, size, ttl)
     }
   }
 
   private def dependencies(segment: Segment)(implicit ctx: segmentDAO.Ctx): Future[Seq[Segment]] = {
     segmentDAO.inputs(segment.id).flatMap { inputs =>
+      val loadInputs = inputs.map { input =>
+        segmentDAO.byId(input.sourceSegmentId)
+      }
+
       Future
-        .collect {
-          inputs.map { input =>
-            segmentDAO.byId(input.sourceSegmentId).flatMap(dependencies)
-          }
+        .collect(loadInputs)
+        .flatMap { segments =>
+          Future
+            .collect(segments.map(dependencies))
+            .map(_.flatten)
+            .map(_ ++ segments)
         }
-        .map(_.flatten)
     }
   }
 }

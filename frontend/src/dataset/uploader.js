@@ -3,7 +3,7 @@ import {Button, Divider, Form, Grid, Header, Icon, Input, List, Modal, Segment} 
 import {ValidatingInput} from '../common';
 import validateTag from '../common/validate';
 import API from '../api';
-import {OwnerInput, VisibilityInput} from '../notebook/dataset_creator';
+import {OwnerInput, VisibilityInput} from './creator';
 import {UserContext} from '../auth';
 import util from '../util';
 

@@ -24,7 +24,6 @@ trait SegmentDAO extends DAO {
   def list(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Segment]]
 
   def count(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
-  def size(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
 
   def make(datasetId: Long)(implicit ctx: Ctx = defaultCtx): Future[Long]
   def addInputs(segmentId: Long, inputs: Map[String, Long])(implicit ctx: Ctx = defaultCtx): Future[Unit]
@@ -35,6 +34,15 @@ trait SegmentDAO extends DAO {
   def recordTransition(segmentId: Long, transition: Transition)(implicit ctx: Ctx = defaultCtx): Future[Unit]
 
   def update(segmentId: Long, to: SegmentState)(fx: Ctx => (SegmentState, SegmentState) => Future[Unit]): Future[Unit]
+
+  def mkRef(segmentId: Long, who: Long, state: SegmentState, shallowSize: Long, cause: RetentionCause)(implicit
+    ctx: Ctx = defaultCtx
+  ): Future[Unit]
+  def updateRefState(segmentId: Long, state: SegmentState)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def updateRefSize(segmentId: Long, shallowSize: Long)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def releaseRef(retainer: Retainer)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def refsByHolder(who: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
+  def refsBySegment(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
 }
 
 @Singleton
@@ -66,6 +74,60 @@ class MysqlSegmentDAO @Inject() (
     r.longOrZero("created_at"),
     r.longOrZero("updated_at")
   )
+
+  private def extractRef(row: Row): Retainer = Retainer(
+    row.longOrZero("segment_id"),
+    row.longOrZero("holder"),
+    SegmentState.parse(row.stringOrNull("state")),
+    row.longOrZero("shallow_size"),
+    objectMapper.parse[RetentionCause](row.stringOrNull("cause"))
+  )
+
+  override def mkRef(
+    segmentId: Long,
+    who: Long,
+    state: SegmentState,
+    shallowSize: Long,
+    cause: RetentionCause
+  )(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("INSERT INTO segment_retentions(segment_id, holder, state, shallow_size, cause) VALUES (?, ?, ?, ?, ?)")
+      .modify(segmentId, who, state.name, shallowSize, objectMapper.writeValueAsString(cause))
+      .unit
+  }
+
+  override def updateRefState(segmentId: Long, state: SegmentState)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("UPDATE segment_retentions SET state = ? where segment_id = ?")
+      .modify(state.name, segmentId)
+      .unit
+  }
+
+  override def updateRefSize(segmentId: Long, size: Long)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("UPDATE segment_retentions SET shallow_size = ? where segment_id = ?")
+      .modify(size, segmentId)
+      .unit
+  }
+
+  override def releaseRef(retainer: Retainer)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+    tx
+      .prepare("DELETE FROM segment_retentions WHERE segment_id = ? AND holder = ? AND cause = ?")
+      .modify(retainer.segmentId, retainer.holder, objectMapper.writeValueAsString(retainer.cause))
+      .unit
+  }
+
+  override def refsByHolder(who: Long)(implicit ctx: MysqlCtx): Future[Seq[Retainer]] = ctx { tx =>
+    tx
+      .prepare("SELECT * FROM segment_retentions WHERE holder = ? ORDER BY shallow_size DESC")
+      .select(who)(extractRef)
+  }
+
+  override def refsBySegment(segmentId: Long)(implicit ctx: MysqlCtx): Future[Seq[Retainer]] = ctx { tx =>
+    tx
+      .prepare("SELECT * FROM segment_retentions WHERE segment_id = ? ORDER BY shallow_size DESC")
+      .select(segmentId)(extractRef)
+  }
 
   override def byId(segmentId: Long)(implicit ctx: MysqlCtx): Future[Segment] = ctx { tx =>
     tx.prepare("SELECT * FROM segments WHERE id = ?")
@@ -110,13 +172,6 @@ class MysqlSegmentDAO @Inject() (
   override def count(datasetId: Long)(implicit ctx: MysqlCtx): Future[Long] = ctx { tx =>
     tx.prepare("SELECT CAST(COUNT(*) AS UNSIGNED INTEGER) AS count FROM segments WHERE dataset_id = ?")
       .select(datasetId)(_.longOrZero("count"))
-      .map(_.head)
-  }
-
-  override def size(datasetId: Long)(implicit ctx: MysqlCtx): Future[Long] = ctx { tx =>
-    tx.prepare(
-      "SELECT CAST(SUM(segment_data.size) AS UNSIGNED INTEGER) AS size FROM segment_data JOIN segments ON segments.id = segment_data.segment_id AND segments.dataset_id = ?"
-    ).select(datasetId)(_.longOrZero("size"))
       .map(_.head)
   }
 

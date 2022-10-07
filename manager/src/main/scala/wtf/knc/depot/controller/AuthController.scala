@@ -4,12 +4,7 @@ import com.twitter.finagle.http.Request
 import com.twitter.finatra.http.Controller
 import com.twitter.util.Future
 import javax.inject.{Inject, Provider, Singleton}
-import wtf.knc.depot.controller.AuthController.{
-  GithubAuthRequest,
-  GithubAuthResponse,
-  GithubRegisterRequest,
-  UserAuthResponse
-}
+import wtf.knc.depot.controller.AuthController.{GithubAuthRequest, GithubAuthResponse, GithubRegisterRequest, UserAuthResponse}
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO}
 import wtf.knc.depot.model.Entity
 import wtf.knc.depot.module.GithubClient

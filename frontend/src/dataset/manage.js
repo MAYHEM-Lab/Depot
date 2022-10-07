@@ -1,38 +1,29 @@
-import React, {useRef, useState} from 'react';
+import React, {useState} from 'react';
 import EntitySet from "../common/acl";
 import API from "../api";
 import {useOutletContext} from "react-router";
-import {Button, Container, Form, Header, Input, Segment} from "semantic-ui-react";
+import {Button, Container, Form, Header, Segment} from "semantic-ui-react";
 import util from "../util";
+import {DurationInput} from "./creator";
 
 export default function DatasetManage() {
     const {entity, dataset, owner, invalidate} = useOutletContext();
 
-    const originalRetention = dataset.retention ? util.parseDuration(dataset.retention).minutes().toString() : ''
-    const originalSchedule = dataset.schedule ? util.parseDuration(dataset.schedule).minutes().toString() : ''
+    const originalRetention = dataset.retention ? util.parseDuration(dataset.retention).asMinutes() : null
+    const originalSchedule = dataset.schedule ? util.parseDuration(dataset.schedule).asMinutes() : null
 
-    const retentionInput = useRef(null)
     const [retention, setRetention] = useState(originalRetention)
     const [retentionEnabled, setRetentionEnabled] = useState(!!dataset.retention)
 
-    const scheduleInput = useRef(null)
     const [schedule, setSchedule] = useState(originalSchedule)
     const [scheduleEnabled, setScheduleEnabled] = useState(!!dataset.schedule)
 
     const [visibility, setVisibility] = useState(dataset.visibility)
     const [description, setDescription] = useState(dataset.description)
 
-    const hasChanged = (before, after) => {
-        const a = parseInt(before)
-        const b = parseInt(after)
-        if (isNaN(a)) return !isNaN(b)
-        if (isNaN(b)) return true
-        return a !== b
-    }
+    const changed = originalSchedule !== schedule || originalRetention !== retention || dataset.description !== description || dataset.visibility !== visibility
 
-    const changed = hasChanged(originalSchedule, schedule) || hasChanged(originalRetention, retention) || dataset.description !== description || dataset.visibility !== visibility
-
-    const submittable = changed && (!retentionEnabled || util.isNumeric(retention)) && (!scheduleEnabled || util.isNumeric(schedule))
+    const submittable = changed && (!retentionEnabled || retention) && (!scheduleEnabled || schedule)
 
     const submit = async () => {
         await API.updateDataset(
@@ -40,8 +31,8 @@ export default function DatasetManage() {
             dataset.tag,
             description,
             visibility,
-            schedule ? `${parseInt(schedule)}.minutes` : null,
-            retention ? `${parseInt(retention)}.minutes` : null
+            schedule ? `${schedule}.minutes` : null,
+            retention ? `${retention}.minutes` : null
         )
         invalidate()
     }
@@ -74,57 +65,30 @@ export default function DatasetManage() {
 
                 {dataset.origin === 'Managed' ?
                     <>
-                        <Header as='h5' content='Retention Policy'/>
-                        <Form.Checkbox checked={retentionEnabled} label='Enable automatic data pruning' onChange={(e, d) => {
+                        <Header as='h5' content='Segment TTL'/>
+                        <Form.Checkbox checked={retentionEnabled} label='Enable automatic segment expiration' onChange={(e, d) => {
                             if (d.checked) {
                                 setRetentionEnabled(true)
                                 setRetention(originalRetention)
-                                setTimeout(() => retentionInput.current.focus(), 1);
                             } else {
                                 setRetentionEnabled(false)
-                                setRetention('')
+                                setRetention(null)
                             }
-                        }
-                        }/>
-                        <Form.Field inline error={!!retention && !util.isNumeric(retention)}>
-                            <Input
-                                ref={retentionInput}
-                                placeholder='Retention'
-                                disabled={!retentionEnabled}
-                                value={retention}
-                                label={{basic: true, content: 'weeks'}}
-                                labelPosition='right'
-                                onChange={(e, d) => {
-                                    setRetention(e.target.value)
-                                }}
-                            />
-                        </Form.Field>
+                        }}/>
 
-                        <Header as='h5' content='Materialization Policy'/>
+                        <DurationInput placeholder='Duration' disabled={!retentionEnabled} onSelect={setRetention} minutes={retention}/>
+
+                        <Header as='h5' content='Materialization Schedule'/>
                         <Form.Checkbox checked={scheduleEnabled} label='Enable automatic segment materialization' onChange={(e, d) => {
                             if (d.checked) {
                                 setScheduleEnabled(true)
                                 setSchedule(originalSchedule)
-                                setTimeout(() => scheduleInput.current.focus(), 1);
                             } else {
                                 setScheduleEnabled(false)
-                                setSchedule('')
+                                setSchedule(null)
                             }
-                        }
-                        }/>
-                        <Form.Field inline error={!!schedule && !util.isNumeric(schedule)}>
-                            <Input
-                                ref={scheduleInput}
-                                placeholder='Frequency'
-                                disabled={!scheduleEnabled}
-                                value={schedule}
-                                label={{basic: true, content: 'minutes'}}
-                                labelPosition='right'
-                                onChange={(e, d) => {
-                                    setSchedule(e.target.value)
-                                }}
-                            />
-                        </Form.Field>
+                        }}/>
+                        <DurationInput placeholder='Schedule' disabled={!scheduleEnabled} onSelect={setSchedule} minutes={schedule}/>
                     </> :
                     null
                 }

@@ -33,6 +33,7 @@ trait DatasetDAO {
   def addCollaborator(datasetId: Long, userId: Long, role: Role): Future[Unit]
   def removeCollaborator(datasetId: Long, userId: Long): Future[Unit]
   def collaborators(datasetId: Long): Future[Map[Long, Role]]
+  def recent(limit: Int): Future[Seq[Dataset]]
 }
 
 @Singleton
@@ -56,6 +57,9 @@ class MysqlDatasetDAO @Inject() (
     r.longOrZero("created_at"),
     r.longOrZero("updated_at")
   )
+
+  override def recent(limit: Int): Future[Seq[Dataset]] =
+    client.select(s"SELECT * FROM datasets ORDER BY created_at DESC LIMIT $limit")(extract)
 
   override def addCollaborator(datasetId: Long, userId: Long, role: Role): Future[Unit] = client
     .prepare("REPLACE INTO dataset_acl(dataset_id, entity_id, role) VALUES(?, ?, ?)")

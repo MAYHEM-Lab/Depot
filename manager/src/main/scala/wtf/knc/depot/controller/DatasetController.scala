@@ -4,6 +4,7 @@ import java.net.URLEncoder
 import java.nio.charset.Charset
 import java.util.{Base64, UUID}
 
+import com.twitter.conversions.DurationOps._
 import com.twitter.finatra.http.Controller
 import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.annotations.Flag
@@ -87,8 +88,7 @@ object DatasetController {
   )
 
   private case class StatsResponse(
-    numSegments: Long,
-    totalSize: Long
+    numSegments: Long
   )
 
   private case class ProvenanceResponse(
@@ -159,8 +159,8 @@ class DatasetController @Inject() (
   override val authProvider: Provider[Option[Auth]],
   override val clusterDAO: ClusterDAO,
   override val entityDAO: EntityDAO,
-  datasetDAO: DatasetDAO,
-  segmentDAO: SegmentDAO,
+  override val datasetDAO: DatasetDAO,
+  override val segmentDAO: SegmentDAO,
   transformationDAO: TransformationDAO,
   notebookDAO: NotebookDAO,
   notebookStore: NotebookStore,
@@ -171,86 +171,16 @@ class DatasetController @Inject() (
   s3: RestS3Service
 ) extends Controller
   with EntityRequests
+  with DatasetRequests
   with Authentication {
   private final val UploadBucket = s"$deployment.uploads"
-
-  // Does entity `entityId` have role `role` against dataset `dataset`?
-  private def authorizeDataset(
-    requester: Option[Entity],
-    role: Option[Role],
-    owner: Entity,
-    dataset: Dataset
-  ): Future[Boolean] = {
-    (requester, role, dataset.visibility) match {
-      case (_, None, _) => Future.True
-      case (_, Some(Role.Member), Visibility.Public) => Future.True
-      case (Some(entity), _, _) if entity == owner => Future.True
-      case (Some(entity), Some(role), _) =>
-        val asOrgMember = owner match {
-          case Entity.Organization(id, _, _) => isMember(id, entity.id, role)
-          case _ => Future.False
-        }
-        val asCollaborator = datasetDAO.collaborators(dataset.id).flatMap { collaborators =>
-          entityDAO
-            .whereMember(entity.id)
-            .map(_ :+ entity)
-            .map { targets =>
-              targets.exists { e =>
-                if (role == Role.Member) {
-                  collaborators.contains(e.id)
-                } else {
-                  collaborators.get(e.id).contains(role)
-                }
-              }
-            }
-        }
-        Future
-          .join(asOrgMember, asCollaborator)
-          .map(Function.tupled(_ || _))
-      case _ => Future.False
-    }
-  }
-
-  private def dataset(role: Option[Role])(implicit req: DatasetRoute): Future[Dataset] = entity(None)
-    .flatMap { owner =>
-      datasetDAO.byTag(req.datasetTag).flatMap {
-        case Some(dataset) =>
-          lazy val deny = response.forbidden.toFutureException
-          lazy val grant = Future.value(dataset)
-          if (_client.contains(Auth.Admin)) {
-            grant
-          } else {
-            _client
-              .fold[Future[Option[Entity]]](Future.None) {
-                case Auth.Cluster(clusterId) =>
-                  clusterDAO.byId(clusterId).flatMap { cluster =>
-                    entityDAO.byId(cluster.ownerId)
-                  }
-                case Auth.User(userId) =>
-                  entityDAO.byId(userId)
-                case _ => Future.None
-              }
-              .flatMap { maybeEntity => authorizeDataset(maybeEntity, role, owner, dataset) }
-              .flatMap { if (_) grant else deny }
-          }
-
-        case _ => throw response.notFound.toException
-      }
-    }
-
-  private def segment(role: Option[Role])(implicit req: SegmentRoute): Future[Segment] = dataset(role)
-    .flatMap { dataset =>
-      segmentDAO.byVersion(dataset.id, req.version).map {
-        case Some(segment) => segment
-        case _ => throw response.notFound.toException
-      }
-    }
 
   private def convertColumnType(columnType: ColumnType): String = columnType match {
     case ColumnType.String => "STRING"
     case ColumnType.Double => "DOUBLE"
     case ColumnType.Float => "FLOAT"
     case ColumnType.Integer => "INT"
+    case ColumnType.Long => "LONG"
   }
 
   private def convertDatatype(datatype: Datatype): (String, String) = datatype match {
@@ -308,7 +238,7 @@ class DatasetController @Inject() (
   prefix("/api/entity/:entity_name/datasets") {
     get("/?") { implicit req: EntityRequest =>
       entity(None).flatMap { owner =>
-        val authFilter: Dataset => Future[Boolean] = _client match {
+        val authFilter: Dataset => Future[Boolean] = client match {
           case Some(Auth.User(userId)) =>
             dataset =>
               entityDAO.byId(userId).flatMap { maybeEntity =>
@@ -350,7 +280,8 @@ class DatasetController @Inject() (
             // no notebook
             // no message dispatch
           }
-
+          require(req.retention.forall(_ >= 1.minute))
+          require(req.schedule.forall(_ >= 1.minute))
           // TODO: kc - validate dataset info
           val inputMode = if (req.isolated) InputMode.Ancilla else InputMode.Trigger
 
@@ -444,7 +375,7 @@ class DatasetController @Inject() (
             require(req.files.nonEmpty, "Dataset cannot be empty")
 
             logger.info(s"Creating new segment for ${owner.name}/${dataset.tag} with ${req.files}")
-            val id = _client match {
+            val id = client match {
               case Some(Auth.User(userId)) => userId
               case _ => -1
             }
@@ -483,17 +414,21 @@ class DatasetController @Inject() (
                   Future
                     .collect(copyFiles)
                     .flatMap { fileData =>
+                      val size = fileData.map(_(1).toString.toInt).sum
                       val data = SegmentData(
                         s"s3a://$bucket/$root",
                         "",
-                        fileData.map(_(1).toString.toInt).sum,
+                        size,
                         0,
                         fileData.map(_.map(_.toString))
                       )
                       publisher
                         .publish(
                           Message
-                            .SegmentTransition(segmentId, Transition.Materialize(data, Trigger.Manual(id, owner.id)))
+                            .SegmentTransition(
+                              segmentId,
+                              Transition.Materialize(data, Trigger.Manual(id, owner.id), size, size)
+                            )
                         )
                     }
                 }
@@ -509,6 +444,8 @@ class DatasetController @Inject() (
       patch("/?") { implicit req: UpdateDataset =>
         dataset(Some(Role.Owner)).flatMap { dataset =>
           logger.info(s"Handling dataset update for ${dataset.tag}: $req")
+          require(req.retention.forall(_ >= 1.minute))
+          require(req.schedule.forall(_ >= 1.minute))
           datasetDAO
             .update(dataset.id, req.description, req.retention, req.schedule, req.visibility)
             .before {
@@ -580,12 +517,7 @@ class DatasetController @Inject() (
 
       get("/stats") { implicit req: DatasetRequest =>
         dataset(Some(Role.Member)).flatMap { dataset =>
-          Future
-            .join(
-              segmentDAO.count(dataset.id),
-              segmentDAO.size(dataset.id)
-            )
-            .map { case (count, size) => response.ok(StatsResponse(count, size)) }
+          segmentDAO.count(dataset.id).map { count => response.ok(StatsResponse(count)) }
         }
       }
 
@@ -602,7 +534,7 @@ class DatasetController @Inject() (
                   case Some(data) => response.ok(SampleResponse(data.sample, data.rows))
                   case _ => response.notFound
                 }
-              case _ => Future.value(response.ok(Seq.empty))
+              case _ => Future.value(response.ok(SampleResponse(Seq.empty, 0)))
             }
           }
         }
@@ -632,7 +564,7 @@ class DatasetController @Inject() (
             entityDAO.byId(dataset.ownerId).flatMap {
               case Some(entity) =>
                 Future.collect(upstreams).map { lineage =>
-                  LineageResponse(entity.name, dataset.tag, dataset.datatype, valid = true, lineage)
+                  LineageResponse(entity.name, dataset.tag, dataset.datatype, valid = true, lineage.sortBy(_.datasetTag))
                 }
               case _ => throw new Exception(s"No owner for dataset ${dataset.id}")
             }
@@ -721,9 +653,24 @@ class DatasetController @Inject() (
               cloudService.size(req.path).flatMap { size =>
                 val data = SegmentData(req.path, "", size, req.rows, req.sample)
                 val trigger = Trigger.System()
-                publisher
-                  .publish(Message.SegmentTransition(segment.id, Transition.Materialize(data, trigger)))
-                  .map(_ => response.created)
+
+                def retainedSize(id: Long): Future[Long] = {
+                  val parentSize = segmentDAO
+                    .inputs(id)
+                    .map(_.map(_.sourceSegmentId))
+                    .flatMap(s => Future.collect(s.map(retainedSize)))
+                    .map(_.sum)
+                  val shallowSize = segmentDAO.data(id).map(_.fold(0L)(_.size))
+                  Future.join(parentSize, shallowSize).map(Function.tupled(_ + _))
+                }
+
+                retainedSize(segment.id).flatMap { retained =>
+                  val tr = Transition.Materialize(data, trigger, size, retained + size)
+                  val msg = Message.SegmentTransition(segment.id, tr)
+                  publisher
+                    .publish(msg)
+                    .map(_ => response.created)
+                }
               }
             }
           }

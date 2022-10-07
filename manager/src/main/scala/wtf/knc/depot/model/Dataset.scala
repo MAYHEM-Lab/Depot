@@ -33,11 +33,11 @@ case class DatasetCollaborator(
 @JsonDeserialize(`using` = classOf[StorageClassDeserializer])
 sealed abstract class StorageClass(val name: String)
 object StorageClass {
-  case object Guaranteed extends StorageClass("Guaranteed")
-  case object Transient extends StorageClass("Transient")
+  case object Strong extends StorageClass("Strong")
+  case object Weak extends StorageClass("Weak")
   def parse(str: String): StorageClass = str match {
-    case "Guaranteed" => StorageClass.Guaranteed
-    case "Transient" => StorageClass.Transient
+    case "Strong" => StorageClass.Strong
+    case "Weak" => StorageClass.Weak
   }
 }
 

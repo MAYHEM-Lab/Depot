@@ -23,7 +23,8 @@ SAMPLE_BYTES = 1000
 
 TYPE_MAPPINGS = {
     "string": "String",
-    "integer": "Integer",
+    "int": "Integer",
+    "bigint": "Long",
     "float": "Float",
     "double": "Double"
 }

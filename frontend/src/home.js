@@ -2,7 +2,7 @@ import React, {useContext, useState} from "react";
 import {UserContext} from "./auth";
 import {useSearchParams} from "react-router-dom";
 import {Button, Header} from "semantic-ui-react";
-import ListDatasets from "./dataset/list";
+import ListDatasets, {RecentDatasets} from "./dataset/list";
 import ListNotebooks from "./notebook/list";
 import ListOrganizations from "./orgs/list";
 import OrganizationCreator from "./orgs/creator";
@@ -70,6 +70,9 @@ export default function Home() {
             <ListClusters entity={user}/>
         </>
     } else {
-        return <div>Main page</div>
+        return <>
+            <Header>Recent Datasets</Header>
+            <RecentDatasets/>
+        </>
     }
 }

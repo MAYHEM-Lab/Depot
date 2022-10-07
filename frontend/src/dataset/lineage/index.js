@@ -60,12 +60,14 @@ export default function DataGraph({graphPromise, renderLink, renderNode, getNode
                             stroke: entry.valid ? null : 'red'
                         },
                         markerEnd: {
-                            type: entry.valid ? 'arrowclosed' : null
+                            type: entry.valid ? 'arrowclosed' : null,
+                            width: 5,
+                            height: 5
                         }
                     })
                 }
                 entry.from.forEach((elem, idx) =>
-                    loop(elem, entry, x - 250, idx * 100)
+                    loop(elem, entry, x - 250, y + (idx * 100) - (Math.floor(entry.from.length / 2) * 100))
                 )
             }
             loop(result)

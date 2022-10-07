@@ -30,6 +30,7 @@ object Main extends HttpServer {
     .filter[ExceptionMappingFilter[Request]]
     .filter[FinagleRequestScopeFilter[Request, Response]]
     .filter[AuthFilter]
+    .add[HomeController]
     .add[ClusterController]
     .add[DatasetController]
     .add[NotebookController]
