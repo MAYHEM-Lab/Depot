@@ -1,0 +1,11 @@
+manager
+frontend
+transformer
+router
+executor
+spark
+kernel
+client
+publish
+docker
+stage

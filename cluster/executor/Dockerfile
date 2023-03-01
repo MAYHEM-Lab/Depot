@@ -1,5 +1,5 @@
 FROM racelab/depot-spark:latest
-
+EXPOSE 8888
 ADD client /opt/depot-client
 RUN pip3 --no-cache-dir install -r /opt/depot-client/requirements.txt && \
     pip3 --no-cache-dir install /opt/depot-client/ && \

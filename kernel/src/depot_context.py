@@ -65,6 +65,7 @@ class SparkExecutor(Executor):
         conf.set('spark.hadoop.fs.s3a.path.style.access', 'true')
         conf.set('spark.hadoop.fs.s3a.connection.ssl.enabled', 'false')
         conf.set('spark.hadoop.fs.s3a.signing-algorithm', 'S3SignerType')
+        conf.set('spark.shuffle.service.enabled', 'true')
 
         self.boto = boto3.client(
             's3',
@@ -140,7 +141,7 @@ class TransformContext(DepotContext):
         lower_inputs = {k.lower(): v for k, v in self.segment['inputs'].items()}
         location = lower_inputs[tag.lower()]
         target_dir = f'.data/{entity}/{tag}'
-        os.makedirs(target_dir, 0o700, exist_ok=True)
+        os.makedirs(target_dir, 0o777, exist_ok=True)
         return self.executor.download(location, target_dir)
 
     def table(self, dataset: str):
@@ -195,7 +196,7 @@ class ExploreContext(DepotContext):
         location = self.depot_client.locate_dataset(entity, tag)['self']
         self.datasets.add(dataset)
         target_dir = f'.data/{entity}/{tag}'
-        os.makedirs(target_dir, 0o700, exist_ok=True)
+        os.makedirs(target_dir, 0o777, exist_ok=True)
         return self.executor.download(location, target_dir)
 
     def table(self, dataset: str):

@@ -12,6 +12,7 @@ import wtf.knc.depot.controller._
 import wtf.knc.depot.module._
 import wtf.knc.depot.service.MessageService
 import com.twitter.conversions.StorageUnitOps._
+import wtf.knc.depot.beam.streaming.WindowedWordCount
 
 object Main extends HttpServer {
 
@@ -44,6 +45,7 @@ object Main extends HttpServer {
     .withStreaming(true)
 
   override def setup(): Unit = {
+    WindowedWordCount.runStream();
     val messenger = injector.instance[MessageService]
     closeOnExit(messenger)
   }

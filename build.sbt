@@ -97,7 +97,14 @@ lazy val manager = (project in file("manager"))
         "com.github.jwt-scala" %% "jwt-core" % jwtsVersion,
         "org.flywaydb" % "flyway-core" % flywayVersion,
         "org.flywaydb" % "flyway-mysql" % flywayVersion,
-        "org.jets3t" % "jets3t" % jets3tVersion
+        "org.jets3t" % "jets3t" % jets3tVersion,
+        "org.apache.beam" % "beam-sdks-java-io-kafka" % "2.17.0",
+        "org.apache.beam" % "beam-sdks-java-core" % "2.40.0",
+        "org.apache.beam" % "beam-model-pipeline" % "2.40.0",
+        "org.apache.beam" % "beam-runners-direct-java" % "2.40.0",
+        "com.google.api-client" % "google-api-client" % "1.31.1",
+        "org.apache.beam" % "beam-sdks-java-extensions-google-cloud-platform-core" % "2.40.0",
+        "org.apache.kafka" %% "kafka" % "3.4.0"
       )
     },
     excludeDependencies ++= Seq(

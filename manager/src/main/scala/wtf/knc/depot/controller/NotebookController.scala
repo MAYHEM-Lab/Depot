@@ -11,6 +11,7 @@ import wtf.knc.depot.dao.{ClusterDAO, EntityDAO, NotebookDAO}
 import wtf.knc.depot.model.{Notebook, Role}
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
+import wtf.knc.depot.beam.MinimalWordCount
 
 object NotebookController {
   trait NotebookRoute extends EntityRoute { val notebookTag: String }

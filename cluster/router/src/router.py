@@ -31,7 +31,7 @@ class ClusterForwarderMixin:
 
         cluster_info = self.client.cluster(entity, cluster)
         notebook_master = cluster_info['notebook']['notebook_master']
-
+        print(notebook_master)
         req = HTTPRequest(protocol + '://' + notebook_master + '/' + request_parts[3])
         req.allow_nonstandard_methods = True
         req.method = server_req.method
@@ -55,6 +55,7 @@ class SocketProxy(ClusterForwarderMixin, WebSocketHandler):
             subprotocols = [s.strip() for s in subprotocol_header.split(',')]
         else:
             subprotocols = []
+        print(req.url)
         self.conn = await websocket_connect(req, subprotocols=subprotocols)
         await super(SocketProxy, self).get(*args, **kwargs)
 

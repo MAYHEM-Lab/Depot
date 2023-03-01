@@ -1,0 +1,8 @@
+/frontend/build/
+/frontend/node_modules/
+/.idea/
+/client/target/
+/client/target/
+/target/
+/manager/target/
+/.bsp/

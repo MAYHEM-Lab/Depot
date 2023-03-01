@@ -125,7 +125,7 @@ class DepotKernelLauncher(Application):
             sandbox_id = self.transform.split(',')[0]
 
         sandbox_uid = random.randint(2001, 2 ** 16 - 10)
-        sandbox_dir = f'/sandbox/{sandbox_id}'
+        sandbox_dir = f'/Users/samridhi/sandbox/{sandbox_id}'
         sandbox_conn = f'{sandbox_dir}/.connection'
 
         with open('/etc/passwd', 'a') as f:
@@ -135,8 +135,8 @@ class DepotKernelLauncher(Application):
             shutil.rmtree(sandbox_dir)
             subprocess.run(['userdel', '-f', sandbox_id], capture_output=True)
 
-        os.makedirs(sandbox_dir, mode=0o700, exist_ok=True)
-        atexit.register(cleanup)
+        os.makedirs(sandbox_dir, mode=0o777, exist_ok=True)
+        #atexit.register(cleanup)
 
         os.chown(sandbox_dir, sandbox_uid, sandbox_uid)
 
