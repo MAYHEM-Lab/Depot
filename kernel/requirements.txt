@@ -1,4 +1,4 @@
-pyspark==3.2.1
+pyspark==3.3.2
 ipykernel==6.4.2
 ipython==7.29.0
 boto3==1.24.18

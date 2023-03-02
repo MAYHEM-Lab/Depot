@@ -65,7 +65,6 @@ class SparkExecutor(Executor):
         conf.set('spark.hadoop.fs.s3a.path.style.access', 'true')
         conf.set('spark.hadoop.fs.s3a.connection.ssl.enabled', 'false')
         conf.set('spark.hadoop.fs.s3a.signing-algorithm', 'S3SignerType')
-        conf.set('spark.shuffle.service.enabled', 'true')
 
         self.boto = boto3.client(
             's3',

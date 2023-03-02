@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import json
 import logging
 import os
@@ -90,12 +88,12 @@ async def transform_worker(client):
                 nbformat.v4.to_notebook_json(content, minor=4),
                 kernel_manager_class=DepotKernelManager,
                 shutdown_kernel='graceful',
-                timeout=600,
+                timeout=180,
                 kernel_name='depot'
             )
             await nb_client.async_execute(cleanup_kc=False)
-            with \
-                    (f'/Users/samridhi/sandbox/{transform_id}/.outputs', 'r') as f:
+
+            with open(f'/Users/samridhi/sandbox/{transform_id}/.outputs', 'r') as f:
                 for line in f.readlines():
                     payload = json.loads(line)
                     rows = payload['rows']

@@ -1,0 +1,7 @@
+setup.py
+depot_python_client.egg-info/PKG-INFO
+depot_python_client.egg-info/SOURCES.txt
+depot_python_client.egg-info/dependency_links.txt
+depot_python_client.egg-info/top_level.txt
+src/__init__.py
+src/depot_client.py

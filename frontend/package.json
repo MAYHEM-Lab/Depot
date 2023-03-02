@@ -41,7 +41,7 @@
     "eject": "react-scripts eject"
   },
   "options": {
-    "allowedHosts": ["localhost", ".localhost"],
+    "allowedHosts": ["localhost", ".localhost", "127.0.0.1"],
     "proxy": "http://localhost:8888"
   },
   "eslintConfig": {

@@ -69,7 +69,7 @@ lazy val manager = (project in file("manager"))
   .settings(
     DockerSettings,
     organization := "wtf.knc.depot",
-    scalaVersion := "2.13.8",
+    scalaVersion := "2.13.5",
     resolvers += "Akka Repository" at "https://repo.akka.io/releases/",
     stage := assembly.value,
     run / fork := true,

@@ -6,3 +6,10 @@
 /target/
 /manager/target/
 /.bsp/
+/project/target/
+/kernel/target/
+/cluster/executor/target/
+/cluster/router/target/
+/cluster/spark/target/
+/cluster/transformer/target/
+/kernel/src/__pycache__/
