@@ -348,6 +348,7 @@ export default class DatasetCreator extends Component {
         this.setState({loading: true})
         try {
             const content = notebook.widget.content.model.toJSON()
+            console.log(content)
             content.cells = content.cells.map(cell => {
                 return {...cell, outputs: []}
             })

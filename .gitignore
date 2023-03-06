@@ -13,3 +13,4 @@
 /cluster/spark/target/
 /cluster/transformer/target/
 /kernel/src/__pycache__/
+/project/project/target/

@@ -2,7 +2,6 @@ package wtf.knc.depot.controller
 
 import java.net.URL
 import java.util.UUID
-
 import com.twitter.conversions.DurationOps._
 import com.twitter.finagle.http.{Fields, MediaType}
 import com.twitter.finatra.http.Controller
@@ -10,13 +9,15 @@ import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.annotations.Flag
 import com.twitter.util._
 import com.twitter.util.jackson.ScalaObjectMapper
+
 import javax.inject.{Inject, Provider, Singleton}
 import org.jets3t.service.impl.rest.httpclient.RestS3Service
-import org.jets3t.service.model.{MultipartUpload, S3Object}
+import org.jets3t.service.model.{MultipartUpload, S3Bucket, S3Object}
 import wtf.knc.depot.controller.UploadController.{CreateUpload, FindUpload, UploadResponse}
 import wtf.knc.depot.dao._
 import wtf.knc.depot.model._
 
+import java.io.File
 import scala.jdk.CollectionConverters._
 import scala.util.control.NonFatal
 
@@ -105,6 +106,12 @@ class UploadController @Inject() (
           _ <- s3Pool { s3.multipartUploadPart(multipart, 1, new S3Object(path, Array.empty[Byte])) }
         } yield response.accepted(UploadResponse(multipart.getUploadId, filename, urls))
       }
+    }
+
+    post("/upload-local/") { implicit req: FindUpload =>
+      val file = new File("/Users/samridhi/data.json")
+      val fileObject = new S3Object(file)
+      s3.putObjectMaybeAsMultipart(UploadBucket, fileObject,5242880)
     }
 
     prefix("/:filename") {

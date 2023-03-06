@@ -1,4 +1,4 @@
-package com.sunil.transforms;
+package wtf.knc.depot.beam.streaming.transforms;
 
 import org.apache.beam.sdk.transforms.DoFn;
 

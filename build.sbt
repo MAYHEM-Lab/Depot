@@ -104,7 +104,9 @@ lazy val manager = (project in file("manager"))
         "org.apache.beam" % "beam-runners-direct-java" % "2.40.0",
         "com.google.api-client" % "google-api-client" % "1.31.1",
         "org.apache.beam" % "beam-sdks-java-extensions-google-cloud-platform-core" % "2.40.0",
-        "org.apache.kafka" %% "kafka" % "3.4.0"
+        "org.apache.kafka" %% "kafka" % "3.4.0",
+        "xyz.junerver.nohttp" % "okhttp" % "0.0.1",
+        "com.google.code.gson" % "gson" % "2.9.1"
       )
     },
     excludeDependencies ++= Seq(

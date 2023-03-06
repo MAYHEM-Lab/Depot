@@ -228,6 +228,7 @@ export default {
     },
 
     createUnmanagedSegment: (owner, tag, files) => {
+        console.log(files)
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/upload`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},

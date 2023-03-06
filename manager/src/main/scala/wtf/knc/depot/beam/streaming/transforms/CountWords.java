@@ -1,4 +1,4 @@
-package com.sunil.transforms;
+package wtf.knc.depot.beam.streaming.transforms;
 
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -16,10 +16,13 @@ public class CountWords
     @Override
     public PCollection<KV<String, Long>> expand(PCollection<String> lines) {
         // Convert lines of text into individual words.
+
         PCollection<String> words = lines.apply(ParDo.of(new ExtractWordsFn()));
 
         // Count the number of times each word occurs.
         PCollection<KV<String, Long>> wordCounts = words.apply(Count.perElement());
+
+
 
         return wordCounts;
     }

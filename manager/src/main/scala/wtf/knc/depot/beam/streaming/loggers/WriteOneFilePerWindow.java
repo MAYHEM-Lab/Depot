@@ -7,6 +7,9 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.windowing.IntervalWindow;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
+import wtf.knc.depot.beam.streaming.transforms.WriteToDepot;
+
+import java.io.IOException;
 
 import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions.checkArgument;
 
@@ -25,6 +28,13 @@ public class WriteOneFilePerWindow extends PTransform<PCollection<String>, PDone
                 input.getWindowingStrategy().getWindowFn().windowCoder() == IntervalWindow.getCoder());
 
         ResourceId resource = FileBasedSink.convertToFileResourceIfPossible(filenamePrefix);
+
+//        try {
+//            String response = WriteToDepot.post("http://localhost:3000/api/entity/samridhim/files", "{\"parts\": \"1\", \"content_type\":\"text/plain\"}");
+//            System.out.println(response);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
 
         return input.apply(
                 TextIO.write()
