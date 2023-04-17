@@ -22,8 +22,25 @@ export default {
             .then(handleErrors)
     },
 
+    createNotebookWithTopic: (owner, tag) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/topic/`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        })
+            .then(handleErrors)
+    },
+
     saveNotebook: (owner, tag, content) => {
         return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/contents`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content: content})
+        })
+            .then(handleErrors)
+    },
+
+    saveNotebookForTopic: (owner, tag, content) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/topic/contents`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({content: content})
@@ -38,7 +55,7 @@ export default {
     },
 
     readNotebook: (owner, tag) => {
-        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/contents`)
+        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/topic/contents`)
             .then(handleErrors)
             .then(response => response.json())
     },

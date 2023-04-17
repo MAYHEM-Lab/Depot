@@ -13,7 +13,7 @@ from jupyterlab.handlers.extension_manager_handler import ExtensionManager
 from jupyterlab.labapp import LabPathApp
 from jupyterlab_server import LabServerApp
 from traitlets import Unicode, Instance
-from jupyter_server.services.contents.manager import FileContentsManager
+from traitlets.config import Config
 from subprocess import check_call
 from depot_client import DepotClient
 import os
@@ -44,7 +44,7 @@ def build_kernel_spec(depot_endpoint: str, depot_access_key: str):
         'display_name': 'Python 3 (depot)',
         'language': 'python',
         'metadata': {
-            'debugger': True
+            'debugger': True,
         }
     })
 
@@ -58,14 +58,6 @@ class DepotKernelSpecManager(KernelSpecManager):
 
     def get_kernel_spec(self, kernel_name, **kwargs):
         return self.spec
-
-
-def post_save(model, os_path, contents_manager):
-    """post-save hook for converting notebooks to .py and .html files."""
-    if model['type'] != 'notebook':
-        return # only do this for notebooks
-    d, fname = os.path.split(os_path)
-    check_call(['ipython', 'nbconvert', '--to', 'script', fname], cwd=d)
 
 
 class DepotServerApp(LabServerApp):
@@ -101,7 +93,6 @@ class DepotServerApp(LabServerApp):
     ServerApp.allow_root = True
     ServerApp.allow_remote_access = True
     ServerApp.allow_origin = '*'
-    FileContentsManager.post_save_hook = post_save
     ServerApp.kernel_spec_manager_class = DepotKernelSpecManager
 
     def initialize_handlers(self):
@@ -131,6 +122,7 @@ class DepotServerApp(LabServerApp):
                 (r'/api/sessions', SessionRootHandler)
             ]
         )
+
 
 if __name__ == '__main__':
     nest_asyncio.apply()

@@ -45,7 +45,7 @@ def build_kernel_spec(depot_endpoint: str, depot_access_key: str, transform: str
         'display_name': 'Python 3 (depot)',
         'language': 'python',
         'metadata': {
-            'debugger': True
+            'debugger': True,
         }
     })
 

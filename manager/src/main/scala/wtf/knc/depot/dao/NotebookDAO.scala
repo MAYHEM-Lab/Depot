@@ -7,8 +7,11 @@ import wtf.knc.depot.model.Notebook
 
 trait NotebookDAO {
   def byTag(tag: String): Future[Option[Notebook]]
+  def byTagbyTopic(tag: String): Future[Option[Notebook]]
   def byOwner(ownerId: Long): Future[Seq[Notebook]]
+  def byOwnerStreamingNotebook(ownerId: Long): Future[Seq[Notebook]]
   def create(tag: String, ownerId: Long): Future[Unit]
+  def createStreaming(tag: String, ownerId: Long): Future[Unit]
   def recent(limit: Int): Future[Seq[Notebook]]
 }
 
@@ -36,6 +39,11 @@ class MysqlNotebookDAO @Inject() (
     .select(tag)(extract)
     .map(_.headOption)
 
+  override def byTagbyTopic(tag: String): Future[Option[Notebook]] = client
+    .prepare("SELECT * FROM streaming_notebooks WHERE tag = ?")
+    .select(tag)(extract)
+    .map(_.headOption)
+
   override def create(tag: String, ownerId: Long): Future[Unit] = client.transaction { tx =>
     val now = Time.now.inMillis
     tx
@@ -43,4 +51,16 @@ class MysqlNotebookDAO @Inject() (
       .modify(tag, ownerId, now, now)
       .unit
   }
+
+  override def createStreaming(tag: String, ownerId: Long): Future[Unit] = client.transaction { tx =>
+    val now = Time.now.inMillis
+    tx
+      .prepare("INSERT INTO streaming_notebooks(tag, owner_id, created_at, updated_at) VALUES(?, ?, ?, ?)")
+      .modify(tag, ownerId, now, now)
+      .unit
+  }
+
+  override def byOwnerStreamingNotebook(ownerId: Long): Future[Seq[Notebook]] = client
+    .prepare("SELECT * FROM streaming_notebooks WHERE owner_id = ?")
+    .select(ownerId)(extract)
 }

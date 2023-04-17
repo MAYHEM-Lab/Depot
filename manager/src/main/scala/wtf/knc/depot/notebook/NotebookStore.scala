@@ -23,18 +23,20 @@ trait NotebookStore {
   def get(tag: String): Future[NotebookContents]
   def size(tag: String): Future[Long]
   def save(tag: String, contents: NotebookContents): Future[Unit]
+  def saveTopic(tag: String, topic: String, contents: NotebookContents): Future[Unit]
+  def getNotebookByTopic(tag:String, topic:String): Future[NotebookContents]
 }
 
 @Singleton
 class CloudNotebookStore @Inject() (
-  @Flag("deployment.id") deployment: String,
-  objectMapper: ScalaObjectMapper,
-  s3: RestS3Service,
-  s3Pool: FuturePool
-) extends NotebookStore {
+                                     @Flag("deployment.id") deployment: String,
+                                     objectMapper: ScalaObjectMapper,
+                                     s3: RestS3Service,
+                                     s3Pool: FuturePool
+                                   ) extends NotebookStore {
   private final val NotebookDir = s"notebooks"
   Await.result {
-    s3Pool { s3.createBucket(NotebookDir) }
+    s3Pool { s3.createBucket(NotebookDir)}
   }
 
   override def size(tag: String): Future[Long] = s3Pool {
@@ -47,8 +49,19 @@ class CloudNotebookStore @Inject() (
     objectMapper.parse[NotebookContents](data)
   }
 
+  override def getNotebookByTopic(tag: String, topic:String): Future[NotebookContents] = s3Pool {
+    val data = s3.getObject(NotebookDir+"-"+"messenger", tag).getDataInputStream
+    objectMapper.parse[NotebookContents](data)
+  }
+
   override def save(tag: String, contents: NotebookContents): Future[Unit] = s3Pool {
     val s3Object = new S3Object(tag, objectMapper.writeValueAsBytes(contents))
     s3.putObject(NotebookDir, s3Object)
+  }
+
+  override def saveTopic(tag: String, topic: String, contents: NotebookContents): Future[Unit] = s3Pool {
+    s3.getOrCreateBucket(NotebookDir+"-"+topic)
+    val s3Object = new S3Object(tag, objectMapper.writeValueAsBytes(contents))
+    s3.putObject(NotebookDir+"-"+topic, s3Object)
   }
 }

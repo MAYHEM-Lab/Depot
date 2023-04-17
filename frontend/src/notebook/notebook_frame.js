@@ -31,6 +31,8 @@ import NotebookTitle from "./notebook_title";
 import NotebookCreator from "./notebook_creator";
 
 import DatasetWidget from "./dataset_widget";
+import SubscribeWidget from "./subscribe_widget";
+
 import {CodeCell} from "@jupyterlab/cells";
 import {ClusterSelector} from "../cluster/selector";
 import {Signal} from "@lumino/signaling";
@@ -75,6 +77,19 @@ export default class NotebookFrame extends Component {
                 }
             }
         })
+
+        rendermime.addFactory({
+            safe: true,
+            mimeTypes: ['application/depot-subscribe'],
+            createRenderer: () => {
+                const {notebooks, activeNotebookIdx} = this.state;
+                if (activeNotebookIdx !== -1) {
+                    return new SubscribeWidget(notebooks[activeNotebookIdx], location, navigator)
+                }
+            }
+        })
+
+
 
         const mFactory = new NotebookModelFactory({})
         const wFactory = new NotebookWidgetFactory({
@@ -276,18 +291,32 @@ export default class NotebookFrame extends Component {
         }
     }
 
+    saveOrCreateNotebookForTopic = async (notebook) => {
+        const {user} = this.props
+        if (notebook.local) {
+            this.setState({notebookCreator: true})
+        } else {
+            const content = notebook.widget.content.model.toJSON()
+            console.log(content)
+            content.cells = content.cells.map(cell => {
+                return {...cell, outputs: []}
+            })
+            await API.saveNotebookForTopic(user.name, notebook.id, content)
+        }
+    }
+
     handleNotebookCreate = async (notebookId, tag) => {
         const {user} = this.props
         const notebook = this.state.notebooks.find((nb) => nb.id === notebookId)
         if (notebook) {
-            await API.createNotebook(user.name, tag)
+            await API.createNotebookWithTopic(user.name, tag)
             const existingNotebooks = this.state.notebooks
             const existingNotebook = existingNotebooks.find((nb) => nb.id === notebookId)
             if (existingNotebook) {
                 await existingNotebook.widget.context.rename(tag)
                 existingNotebook.id = tag
                 existingNotebook.local = false
-                await API.saveNotebook(user.name, tag, existingNotebook.widget.content.model.toJSON())
+                await API.saveNotebookForTopic(user.name, tag, existingNotebook.widget.content.model.toJSON())
                 this.setState({notebooks: existingNotebooks, notebookCreator: false})
             }
         }
@@ -304,6 +333,11 @@ export default class NotebookFrame extends Component {
                 event.preventDefault()
                 event.stopPropagation()
                 await this.saveOrCreate(activeNotebook)
+            }
+            if (event.ctrlKey && event.key.toLowerCase() === 'p') {
+                event.preventDefault()
+                event.stopPropagation()
+                await this.saveOrCreateNotebookForTopic(activeNotebook)
             }
             if (event.ctrlKey && event.key.toLowerCase() === 'd') {
                 event.preventDefault()

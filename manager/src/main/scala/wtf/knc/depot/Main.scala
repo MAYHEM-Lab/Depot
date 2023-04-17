@@ -45,11 +45,6 @@ object Main extends HttpServer {
     .withStreaming(true)
 
   override def setup(): Unit = {
-    new Thread(new Runnable() {
-      override def run(): Unit = {
-        WindowedWordCount.runStream();
-      }
-    }).start()
     val messenger = injector.instance[MessageService]
     closeOnExit(messenger)
   }

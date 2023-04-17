@@ -690,8 +690,7 @@ class DatasetController @Inject() (
                   case Some(Auth.User(userId)) => userId
                   case _ => -1
                 }
-                // TODO: Allow all authorized users to materialize datasets and select a quota (via org) to consume
-                publisher
+                 publisher
                   .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id, id))))
                   .map(_ => response.created(segment.id))
               } else {

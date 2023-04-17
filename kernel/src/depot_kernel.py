@@ -14,14 +14,19 @@ from ipykernel.zmqshell import ZMQInteractiveShell
 from pyspark.sql import SparkSession
 from traitlets import Unicode, ObjectName, Instance
 from traitlets.config import Application
-
+from confluent_kafka import Consumer
 from depot_client import DepotClient
-from depot_context import SparkExecutor, TransformContext, ExploreContext, DepotContext
+from depot_context import SparkExecutor, StreamContext,TransformContext, ExploreContext, DepotContext
 
 
 class DepotFormatter(BaseFormatter):
     format_type = Unicode('application/depot-publish')
     print_method = ObjectName('_repr_depot_')
+    _return_type = dict
+
+class SubscribeFormatter(BaseFormatter):
+    format_type = Unicode('application/depot-subscribe')
+    print_method = ObjectName('depot_subscribe')
     _return_type = dict
 
 
@@ -39,7 +44,8 @@ class DepotInteractiveShell(ZMQInteractiveShell):
         LatexFormatter,
         JSONFormatter,
         JavascriptFormatter,
-        DepotFormatter
+        DepotFormatter,
+        SubscribeFormatter
     ]
     d = {}
     for cls in formatter_classes:
@@ -55,11 +61,13 @@ class DepotKernel(IPythonKernel):
     depot_context = Instance(DepotContext)
     spark_session = Instance(SparkSession)
     shell_class = DepotInteractiveShell
+    consumer = Instance(Consumer)
 
     def __init__(self, **kwargs):
         IPythonKernel.user_ns = {
             'depot': self.depot_context,
-            'spark': self.spark_session
+            'spark': self.spark_session,
+            'consumer': self.consumer,
         }
         super(DepotKernel, self).__init__(**kwargs)
 
@@ -75,7 +83,12 @@ class DepotKernelApp(IPKernelApp):
     def initialize(self, argv=None):
         self.parse_command_line(argv)
 
-        if len(self.transform) > 0:
+        if self.transform == "streaming":
+            _ = self.transform.split(',')
+            executor = SparkExecutor(self.client, "streaming")
+            depot_ctx = StreamContext(self.client, executor)
+
+        elif len(self.transform) > 0:
             _, entity, tag, version, path = self.transform.split(',')
             executor = SparkExecutor(self.client, f'transform:{entity}/{tag}/{version}')
             depot_ctx = TransformContext(self.client, executor, entity, tag, int(version), path)
@@ -85,6 +98,7 @@ class DepotKernelApp(IPKernelApp):
 
         DepotKernel.depot_context = depot_ctx
         DepotKernel.spark_session = executor.spark
+        DepotKernel.consumer = executor.consumer
         super(DepotKernelApp, self).initialize(argv)
 
 
@@ -133,16 +147,17 @@ class DepotKernelLauncher(Application):
 
         def cleanup():
             shutil.rmtree(sandbox_dir)
-            subprocess.run(['userdel', '-f', sandbox_id], capture_output=True)
+            #subprocess.run(['userdel', '-f', sandbox_id], capture_output=True)
 
         os.makedirs(sandbox_dir, mode=0o777, exist_ok=True)
-        #atexit.register(cleanup)
+        atexit.register(cleanup)
 
         os.chown(sandbox_dir, sandbox_uid, sandbox_uid)
 
         parent_conn = self.connection_file
         os.chown(parent_conn, sandbox_uid, sandbox_uid)
         os.link(parent_conn, sandbox_conn)
+
 
         mpl_cfg = f'{sandbox_dir}/.matplotlib'
         envs = {'MPLCONFIGDIR': mpl_cfg}

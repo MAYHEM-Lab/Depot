@@ -5,8 +5,9 @@ import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.Logging
 import com.twitter.util.Future
 import com.twitter.util.jackson.ScalaObjectMapper
+
 import javax.inject.{Inject, Provider, Singleton}
-import wtf.knc.depot.controller.NotebookController.{NotebookContentRequest, NotebookRequest, NotebookRoute}
+import wtf.knc.depot.controller.NotebookController.{NotebookContentRequest, NotebookGetRequest, NotebookRequest, NotebookRoute, NotebookTopicRequest}
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO, NotebookDAO}
 import wtf.knc.depot.model.{Notebook, Role}
 import wtf.knc.depot.notebook.NotebookStore
@@ -21,11 +22,28 @@ object NotebookController {
     @RouteParam notebookTag: String
   ) extends NotebookRoute
 
+  private case class NotebookGetRequest(
+    @RouteParam entityName: String,
+  )
+
+
+
+  private case class NotebookTopicRequest(
+    @RouteParam entityName: String,
+    @RouteParam notebookTag: String,
+    @RouteParam notebookTopic: String,
+    content: NotebookContents
+  ) extends NotebookRoute
+
+
+
   case class NotebookContentRequest(
     @RouteParam entityName: String,
     @RouteParam notebookTag: String,
     content: NotebookContents
   ) extends NotebookRoute
+
+
 }
 
 @Singleton
@@ -49,13 +67,27 @@ class NotebookController @Inject() (
       }
     }
 
-  prefix("/api/entity/:entity_name/notebooks") {
-    get("/?") { implicit req: EntityRequest =>
-      entity(Some(Role.Member)).flatMap { owner =>
-        notebookDAO.byOwner(owner.id).map(response.ok)
+  def notebookByTopic(role: Option[Role])(implicit req: NotebookRoute): Future[Notebook] = entity(role)
+    .flatMap { _ =>
+      notebookDAO.byTagbyTopic(req.notebookTag).map {
+        case Some(notebook) => notebook
+        case _ => throw response.notFound.toException
       }
     }
 
+  prefix("/api/entity/:entity_name/notebooks") {
+    get("/?") { implicit req: EntityRequest =>
+      entity(Some(Role.Member)).flatMap { owner =>
+        notebookDAO.byOwnerStreamingNotebook(owner.id).map(response.ok)
+      }
+    }
+    prefix("/topic") {
+      get("/?") { implicit req: EntityRequest =>
+        entity(Some(Role.Member)).flatMap { owner =>
+          notebookDAO.byOwnerStreamingNotebook(owner.id).map(response.ok)
+        }
+      }
+    }
     prefix("/:notebook_tag") {
       get("/?") { implicit req: NotebookRequest =>
         notebook(Some(Role.Member))
@@ -69,6 +101,39 @@ class NotebookController @Inject() (
               .map { _ => response.created }
           }
         }
+      }
+
+
+      prefix("/topic") {
+          prefix("/contents") {
+            get("/?") { implicit req: NotebookRequest =>
+              notebookByTopic(Some(Role.Member)).flatMap { notebook =>
+                notebookStore
+                  .getNotebookByTopic(notebook.tag, "messenger")
+                  .map(response.ok)
+              }
+            }
+            post("/?") { implicit req: NotebookContentRequest =>
+              notebookByTopic(Some(Role.Owner)).flatMap { notebook =>
+                notebookStore
+                  .saveTopic(notebook.tag, "messenger", req.content)
+                  .map { _ => response.created }
+              }
+            }
+          }
+
+          post("/?") { implicit req: NotebookRequest =>
+            entity(Some(Role.Owner)).flatMap { owner =>
+              notebookDAO.createStreaming(req.notebookTag, owner.id).flatMap { _ =>
+                notebookStore
+                  .saveTopic(req.notebookTag, "messenger", objectMapper.convert[NotebookContents](NotebookStore.EmptyNotebook))
+                  .map { _ => response.created }
+            }
+          }
+        }
+
+        }
+      }
       }
 
       prefix("/contents") {
@@ -88,6 +153,4 @@ class NotebookController @Inject() (
           }
         }
       }
-    }
-  }
 }

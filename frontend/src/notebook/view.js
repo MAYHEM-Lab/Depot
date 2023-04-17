@@ -90,7 +90,7 @@ export default function NotebookCode() {
         API.readNotebook(entity.name, notebookTag).then(result => {
             result.cells = result.cells.map((c) => {
                 c.source = [c.source]
-                c.metadata.editable = false
+                c.metadata.editable = true
                 return c
             })
             setCode(result)
