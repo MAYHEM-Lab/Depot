@@ -78,7 +78,7 @@ class NotebookController @Inject() (
   prefix("/api/entity/:entity_name/notebooks") {
     get("/?") { implicit req: EntityRequest =>
       entity(Some(Role.Member)).flatMap { owner =>
-        notebookDAO.byOwnerStreamingNotebook(owner.id).map(response.ok)
+        notebookDAO.byOwner(owner.id).map(response.ok)
       }
     }
     prefix("/topic") {
@@ -105,35 +105,33 @@ class NotebookController @Inject() (
 
 
       prefix("/topic") {
-          prefix("/contents") {
-            get("/?") { implicit req: NotebookRequest =>
-              notebookByTopic(Some(Role.Member)).flatMap { notebook =>
-                notebookStore
-                  .getNotebookByTopic(notebook.tag, "messenger")
-                  .map(response.ok)
-              }
-            }
-            post("/?") { implicit req: NotebookContentRequest =>
-              notebookByTopic(Some(Role.Owner)).flatMap { notebook =>
-                notebookStore
-                  .saveTopic(notebook.tag, "messenger", req.content)
-                  .map { _ => response.created }
-              }
+        prefix("/contents") {
+          get("/?") { implicit req: NotebookRequest =>
+            notebookByTopic(Some(Role.Member)).flatMap { notebook =>
+              notebookStore
+                .getNotebookByTopic(notebook.tag, "messenger")
+                .map(response.ok)
             }
           }
-
-          post("/?") { implicit req: NotebookRequest =>
-            entity(Some(Role.Owner)).flatMap { owner =>
-              notebookDAO.createStreaming(req.notebookTag, owner.id).flatMap { _ =>
-                notebookStore
-                  .saveTopic(req.notebookTag, "messenger", objectMapper.convert[NotebookContents](NotebookStore.EmptyNotebook))
-                  .map { _ => response.created }
+          post("/?") { implicit req: NotebookContentRequest =>
+            notebookByTopic(Some(Role.Owner)).flatMap { notebook =>
+              notebookStore
+                .saveTopic(notebook.tag, "messenger", req.content)
+                .map { _ => response.created }
             }
           }
         }
 
+        post("/?") { implicit req: NotebookRequest =>
+          entity(Some(Role.Owner)).flatMap { owner =>
+            notebookDAO.createStreaming(req.notebookTag, owner.id).flatMap { _ =>
+              notebookStore
+                .saveTopic(req.notebookTag, "messenger", objectMapper.convert[NotebookContents](NotebookStore.EmptyNotebook))
+                .map { _ => response.created }
+            }
+          }
         }
-      }
+
       }
 
       prefix("/contents") {
@@ -153,4 +151,6 @@ class NotebookController @Inject() (
           }
         }
       }
+    }
+  }
 }

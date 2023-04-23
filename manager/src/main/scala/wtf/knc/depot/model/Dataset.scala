@@ -23,6 +23,12 @@ case class Dataset(
   updatedAt: Long
 )
 
+case class StreamingMapping(
+  datasetId: Long,
+  topic: String,
+  notebookTag: String
+  )
+
 case class DatasetCollaborator(
   datasetId: Long,
   entityId: Long,
@@ -56,9 +62,11 @@ object Origin {
   def parse(str: String): Origin = str match {
     case "Unmanaged" => Unmanaged
     case "Managed" => Managed
+    case "Streaming" => Streaming
   }
   case object Unmanaged extends Origin("Unmanaged")
   case object Managed extends Origin("Managed")
+  case object Streaming extends Origin("Streaming")
 }
 
 class OriginSerializer extends StdSerializer[Origin](classOf[Origin]) {

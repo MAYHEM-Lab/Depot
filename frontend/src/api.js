@@ -303,7 +303,43 @@ export default {
             }),
             isolated: isolated,
             schedule: frequency,
-            retention: retention
+            retention: retention,
+            topic: null
+        }
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        })
+            .then(handleErrors)
+    },
+
+    createStreamingTopicDataset: (
+        owner,
+        tag,
+        description,
+        content,
+        datatype,
+        visibility,
+        storageClass,
+        sources,
+        isolated,
+        frequency,
+        retention,
+        topic
+    ) => {
+        const body = {
+            description: description,
+            content: content,
+            datatype: datatype,
+            visibility: visibility,
+            storage_class: 'Weak',
+            origin: 'Streaming',
+            triggers: [],
+            isolated: true,
+            schedule: null,
+            retention: null,
+            topic:topic
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',

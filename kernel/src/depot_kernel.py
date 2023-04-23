@@ -14,7 +14,6 @@ from ipykernel.zmqshell import ZMQInteractiveShell
 from pyspark.sql import SparkSession
 from traitlets import Unicode, ObjectName, Instance
 from traitlets.config import Application
-from confluent_kafka import Consumer
 from depot_client import DepotClient
 from depot_context import SparkExecutor, StreamContext,TransformContext, ExploreContext, DepotContext
 
@@ -61,13 +60,10 @@ class DepotKernel(IPythonKernel):
     depot_context = Instance(DepotContext)
     spark_session = Instance(SparkSession)
     shell_class = DepotInteractiveShell
-    consumer = Instance(Consumer)
-
     def __init__(self, **kwargs):
         IPythonKernel.user_ns = {
             'depot': self.depot_context,
             'spark': self.spark_session,
-            'consumer': self.consumer,
         }
         super(DepotKernel, self).__init__(**kwargs)
 
@@ -75,6 +71,7 @@ class DepotKernel(IPythonKernel):
 class DepotKernelApp(IPKernelApp):
     kernel_class = DepotKernel
     transform = Unicode('').tag(config=True)
+    streaming = Unicode('').tag(config=True)
     default_extensions = []
     client = Instance(DepotClient)
 
@@ -83,10 +80,10 @@ class DepotKernelApp(IPKernelApp):
     def initialize(self, argv=None):
         self.parse_command_line(argv)
 
-        if self.transform == "streaming":
-            _ = self.transform.split(',')
+        if len(self.streaming) > 0:
+            _, tag, path = self.streaming.split(',')
             executor = SparkExecutor(self.client, "streaming")
-            depot_ctx = StreamContext(self.client, executor)
+            depot_ctx = StreamContext(self.client, tag, path, executor)
 
         elif len(self.transform) > 0:
             _, entity, tag, version, path = self.transform.split(',')
@@ -98,16 +95,16 @@ class DepotKernelApp(IPKernelApp):
 
         DepotKernel.depot_context = depot_ctx
         DepotKernel.spark_session = executor.spark
-        DepotKernel.consumer = executor.consumer
         super(DepotKernelApp, self).initialize(argv)
 
 
-def start_kernel(uid, dir, conn, transform, client, envs):
+def start_kernel(uid, dir, conn, transform, streaming, client, envs):
     IPKernelApp.connection_file = conn
     IPKernelApp.connection_dir = dir
     IPKernelApp.ipython_dir = dir
     DepotKernelApp.client = client
     DepotKernelApp.transform = transform
+    DepotKernelApp.streaming = streaming
 
     for k, v in envs.items():
         os.environ[k] = v
@@ -122,11 +119,13 @@ class DepotKernelLauncher(Application):
     depot_endpoint = Unicode().tag(config=True)
     access_key = Unicode().tag(config=True)
     transform = Unicode().tag(config=True)
+    streaming = Unicode().tag(config=True)
 
     aliases = {
         'depot-endpoint': 'DepotKernelLauncher.depot_endpoint',
         'depot-access-key': 'DepotKernelLauncher.access_key',
         'depot-transform': 'DepotKernelLauncher.transform',
+        'depot-streaming':'DepotKernelLauncher.streaming',
         'f': 'DepotKernelLauncher.connection_file'
     }
 
@@ -137,6 +136,8 @@ class DepotKernelLauncher(Application):
 
         if len(self.transform) > 0:
             sandbox_id = self.transform.split(',')[0]
+        if len(self.streaming) > 0:
+            sandbox_id = self.streaming.split(',')[0]
 
         sandbox_uid = random.randint(2001, 2 ** 16 - 10)
         sandbox_dir = f'/Users/samridhi/sandbox/{sandbox_id}'
@@ -163,7 +164,7 @@ class DepotKernelLauncher(Application):
         envs = {'MPLCONFIGDIR': mpl_cfg}
 
         client = DepotClient(self.depot_endpoint, self.access_key)
-        p = multiprocessing.Process(target=start_kernel, args=(sandbox_uid, sandbox_dir, sandbox_conn, self.transform, client, envs))
+        p = multiprocessing.Process(target=start_kernel, args=(sandbox_uid, sandbox_dir, sandbox_conn, self.transform, self.streaming, client, envs))
         p.daemon = True
         p.start()
         try:

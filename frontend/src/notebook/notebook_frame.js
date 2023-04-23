@@ -31,7 +31,7 @@ import NotebookTitle from "./notebook_title";
 import NotebookCreator from "./notebook_creator";
 
 import DatasetWidget from "./dataset_widget";
-import SubscribeWidget from "./subscribe_widget";
+import StreamingWidget from "./streaming_widget";
 
 import {CodeCell} from "@jupyterlab/cells";
 import {ClusterSelector} from "../cluster/selector";
@@ -84,7 +84,7 @@ export default class NotebookFrame extends Component {
             createRenderer: () => {
                 const {notebooks, activeNotebookIdx} = this.state;
                 if (activeNotebookIdx !== -1) {
-                    return new SubscribeWidget(notebooks[activeNotebookIdx], location, navigator)
+                    return new StreamingWidget(notebooks[activeNotebookIdx], location, navigator)
                 }
             }
         })

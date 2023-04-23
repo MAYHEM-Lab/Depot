@@ -11,77 +11,35 @@ from botocore.client import Config
 from io import BytesIO
 import re
 import os
-
+from confluent_kafka import Consumer
 S3_REGEX = r'^s3a://(.*?)/(.*?)$'
-
-
 from depot_client import DepotClient
-
-map = dict()
-
-class Consumer:
-    def __init__(self, topic):
-        self.topic = topic
-
-    def consume(self):
-        while True:
-            msg=self.executor.consumer.poll(1.0) #timeout
-            if msg is None:
-                continue
-            if msg.error():
-                return Exception('Error: {}'.format(msg.error()))
-                continue
-            data=msg.value().decode('utf-8')
-
-            for notebook in map[topic]:
-                nb_client = NotebookClient()
-                #retrieve process_func
-                #thread = threading.Thread(target=process_func,
-                #                  args=(data,))
-                #thread.daemon = True  # so you can quit the demo program easily :)
-                #thread.start()
-
-    def register_notebook(self, notebook_id):
-        if map[self.topic] is None:
-            map[self.topic] = []
-            map[self.topic].append(notebook_id)
-        else:
-            map[self.topic].append(notebook_id)
-
-class ConsumerHandler(RequestHandler):
-
-    def set_default_headers(self):
-        self.set_header('Content-Type', 'application/json')
-
-    def write_error(self, status_code, **kwargs):
-        reply = {'message': 'Unknown error'}
-        message = kwargs.get('message')
-        exc_info = kwargs.get('exc_info')
-
-        if message:
-            reply['message'] = message
-        elif exc_info:
-            reply['message'] = str(exc_info[1])
-        self.finish(json.dumps(reply))
-
-    async def post(self):
-        payload = json.loads(self.request.body)
-        topic = payload["topic"]
-        consumer = Consumer(topic)
-        consumer.register_notebook(topic)
-        while True:
-            thread = threading.Thread(target=consumer.consume,
-                                      args=())
-            thread.daemon = True  # so you can quit the demo program easily :)
-            thread.start()
+from nbparam import execute_notebook
+from tornado.ioloop import IOLoop
+import uuid
+import logging
 
 
 if __name__ == '__main__':
     define('port', default=9992, help='port to listen on')
     define('depot-endpoint', help='Depot API server endpoint')
     define('depot-access-key', help='Depot cluster access key')
+    define('topic', help='Consumer topic to subscribe on')
 
     tornado.options.parse_command_line()
+
+    logger = logging.getLogger('depot.consumer')
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)-8s %(message)s',
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    logger.setLevel(logging.INFO)
+
+    if options.topic is None:
+        print("consumer topic is needed, exiting")
+        exit(1)
+
     depot_client = DepotClient(options.depot_endpoint, options.depot_access_key)
     cluster_info = depot_client.cluster()
     keys = cluster_info['keys']
@@ -99,24 +57,60 @@ if __name__ == '__main__':
         )
     )
 
-    r = requests.get(
-        f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/topic/',
-        headers={'access_key': options.depot_access_key}
-    )
-    info = r.json()
-    for k in info:
-        print(k["tag"])
+    consumer =  Consumer({'bootstrap.servers':'localhost:9092','group.id':'python-consumer','auto.offset.reset':'latest'})
+    consumer.subscribe(["messenger"])
+
+    while True:
+        msg=consumer.poll(1.0) #timeout
+        if msg is None:
+            continue
+        if msg.error():
+            print('Error: {}'.format(msg.error()))
+            continue
+        data=[int(msg.value().decode('utf-8'))]
         r = requests.get(
-            f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{k["tag"]}/topic//contents',
-            headers={'access_key': options.depot_access_key}
+        f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/datasets/topics/{options.topic}',
+        headers={'access_key': options.depot_access_key}
         )
-        contents = r.json()
-        # Serializing json
-        json_object = json.dumps(contents, indent=4)
-
-        # Writing to sample.json
-        with open(f"executable-{k['tag']}.ipynb", "w") as outfile:
-            outfile.write(json_object)
-
-
-
+        print(r)
+        datasets = r.json()
+        for dataset in datasets:
+            dataset_id = dataset["dataset_id"]
+            notebook_tag = dataset["notebook_tag"]
+            print(dataset_id)
+            r = requests.get(
+                f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{notebook_tag}/contents',
+                headers={'access_key': options.depot_access_key}
+            )
+            contents = r.json()
+            print(contents)
+            if (contents.get('cells')) and len(contents['cells'])>0:
+                #call manager to create new segment and send the path of the created segment
+                #IMP NOTE: notebook <> data mapping needs to be done, so while creating this dataset info,
+                # store the notebook ID in streaming_data_notebook dataset with data-tag and notebook tag info.
+                # And then during this notebooks execution, call this table and get the dataset tag name
+                r = requests.post(
+                    f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/datasets/{dataset_id}/segment',
+                    headers={'access_key': options.depot_access_key}
+                )
+                print(r)
+                if r.ok:
+                    print(r.json())
+                    bucket = r.json().get('bucket')
+                    key = r.json().get('root')
+                    dataset_tag = r.json().get('dataset_tag')
+                    path = f"s3a://{bucket}/{key}"
+                    #pass this path in the depot kernel object in "streaming" string while executing nb
+                    print(f"executing notebook {notebook_tag}")
+                    sandbox_id = uuid.uuid4().hex
+                    execute_notebook(notebook_tag, path, depot_client, contents, data, sandbox_id)
+                    with open(f'/Users/samridhi/sandbox/{sandbox_id}/.outputs', 'r') as f:
+                        for line in f.readlines():
+                            payload = json.loads(line)
+                            rows = payload['rows']
+                            sample = payload['sample']
+                            depot_client.commit_segment(cluster_info["owner"]["name"], dataset_tag, int(key.split("/")[1]), path, rows, sample)
+                        logger.info(f'Successfully created segment [{cluster_info["owner"]["name"]}/{dataset_id}@{int(key.split("/")[1])}]')
+                else:
+                    print("error")
+                #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier

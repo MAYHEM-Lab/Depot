@@ -25,6 +25,7 @@ object MysqlModule extends TwitterModule {
     bind[NotebookDAO].to[MysqlNotebookDAO]
     bind[EntityDAO].to[MysqlEntityDAO]
     bind[ClusterDAO].to[MysqlClusterDAO]
+    bind[StreamingTransformationDAO].to[MysqlStreamingTransformationDAO]
   }
 
   override def singletonStartup(injector: Injector): Unit = {

@@ -1,0 +1,1 @@
+ALTER TABLE datasets MODIFY COLUMN origin ENUM('Managed', 'Unmanaged', 'Streaming');

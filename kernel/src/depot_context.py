@@ -13,7 +13,6 @@ from botocore.client import Config
 import pyspark
 from pyspark import SparkConf
 import threading
-from confluent_kafka import Consumer
 import queue
 
 S3_REGEX = r'^s3a://(.*?)/(.*?)$'
@@ -42,14 +41,14 @@ class PublishPayload:
     def _repr_depot_(self):
         return {'touched_datasets': self.touched_datasets, 'result_type': self.result_type}
 
-
-class SubscribeNotebook:
-    def __init__(self, consumer_topic):
-        self.consumer_topic = consumer_topic
+class PublishStreaming:
+    def __init__(self, touched_datasets, result_type, topic):
+        self.touched_datasets = touched_datasets
+        self.result_type = result_type
+        self.topic = topic
 
     def depot_subscribe(self):
-        return {'consumer_topic': self.consumer_topic}
-
+        return {'touched_datasets': self.touched_datasets, 'result_type': self.result_type, 'topic':self.topic}
 
 class Executor:
     def read(self, location): raise NotImplementedError()
@@ -103,15 +102,10 @@ class SparkExecutor(Executor):
             .config(conf=conf) \
             .getOrCreate()
 
-        self.consumer =  Consumer({'bootstrap.servers':'localhost:9092','group.id':'python-consumer','auto.offset.reset':'earliest'})
-
 
     def upload(self, path, fp):
         (bucket, key) = re.match(S3_REGEX, path).groups()
         self.boto.upload_fileobj(fp, bucket, key)
-
-    def upload_streaming(self, fp):
-        self.boto.upload_fileobj(fp, "notebooks-messenger", "data")
 
     def download(self, location, target_dir):
         files = {}
@@ -145,6 +139,7 @@ class DepotContext:
     def raw(self, dataset: str): raise NotImplementedError
     def table(self, dataset: str): raise NotImplementedError()
     def publish(self, payload): raise NotImplementedError()
+    def publish_streaming(self, payload, topic:str): raise NotImplementedError()
 
 
 
@@ -202,6 +197,8 @@ class TransformContext(DepotContext):
             f.write(json.dumps(result))
             f.write('\n')
 
+    def publish_streaming(self, payload, topic:str):
+        return
 
 class ExploreContext(DepotContext):
     def __init__(self, depot_client, executor):
@@ -241,35 +238,28 @@ class ExploreContext(DepotContext):
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
         return PublishPayload(self.datasets, depot_schema)
 
-    def consumer(self, process_func):
-        while True:
-            msg=self.executor.consumer.poll(1.0) #timeout
-            if msg is None:
-                continue
-            if msg.error():
-                return Exception('Error: {}'.format(msg.error()))
-                continue
-            data=msg.value().decode('utf-8')
-            thread = threading.Thread(target=process_func,
-                                      args=(data,))
-            thread.daemon = True  # so you can quit the demo program easily :)
-            thread.start()
+    def publish_streaming(self, payload, topic:str):
+        if isinstance(payload, pyspark.sql.DataFrame):
+            depot_schema = {
+        'type': 'Table',
+        'columns': [{'name': f.name, 'column_type': TYPE_MAPPINGS[f.dataType.simpleString()]} for f in payload.schema.fields]
+    }
+        elif isinstance(payload, dict):
+            depot_schema = {
+            'type': 'Raw'
+        }
+        else:
+            raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
 
-    def start_consuming(self, process_func):
-        _queue = queue.Queue()
-
-        thread = threading.Thread(target=self.consumer,
-                              args=(process_func,))
-        thread.daemon = True  # so you can quit the demo program easily :)
-        thread.start()
-
+        return PublishStreaming(self.datasets, depot_schema, topic)
 
 class StreamContext(DepotContext):
-    def __init__(self, depot_client, executor):
+    def __init__(self, depot_client, tag, path, executor):
         self.depot_client = depot_client
         self.executor = executor
         self.datasets = set()
-        self.target_path="s3a://notebooks-messenger"
+        self.tag = tag
+        self.target_path= path
 
 
     def raw(self, dataset: str):
@@ -287,7 +277,9 @@ class StreamContext(DepotContext):
         return self.executor.read(location)
 
     def publish(self, payload):
-        print("hello from publish in stream")
+        return
+
+    def publish_streaming(self, payload, topic="messenger"):
         samples = []
         rows = 0
         if isinstance(payload, pyspark.sql.DataFrame):
@@ -307,8 +299,8 @@ class StreamContext(DepotContext):
                 with src as fp:
                     samples.append([key, str(size), type, base64.b64encode(fp.read(SAMPLE_BYTES)).decode('ascii')])
                     fp.seek(0)
+                    self.executor.upload(self.target_path, fp)
 
-                    self.executor.upload_streaming(fp)
         else:
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
         with open('.outputs', 'a+') as f:

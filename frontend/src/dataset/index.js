@@ -112,7 +112,7 @@ export default function DatasetHeader() {
         },
     ]
 
-    if (dataset.origin === 'Managed') {
+    if (dataset.origin === 'Managed' || dataset.origin === 'Streaming') {
         panes.push({
             menuItem: {
                 as: Link,
