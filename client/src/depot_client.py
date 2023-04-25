@@ -56,8 +56,3 @@ class DepotClient:
             headers={'access_key': self.access_key}
         )
         assert r.status_code == 201
-
-    def get_notebooks(self, owner):
-        r =   requests.get(f'{self.depot_destination}/api/entity/${owner}/notebooks/topic/')
-        notebooks = r.json()
-        return notebooks
