@@ -309,14 +309,14 @@ export default class NotebookFrame extends Component {
         const {user} = this.props
         const notebook = this.state.notebooks.find((nb) => nb.id === notebookId)
         if (notebook) {
-            await API.createNotebookWithTopic(user.name, tag)
+            await API.createNotebook(user.name, tag)
             const existingNotebooks = this.state.notebooks
             const existingNotebook = existingNotebooks.find((nb) => nb.id === notebookId)
             if (existingNotebook) {
                 await existingNotebook.widget.context.rename(tag)
                 existingNotebook.id = tag
                 existingNotebook.local = false
-                await API.saveNotebookForTopic(user.name, tag, existingNotebook.widget.content.model.toJSON())
+                await API.saveNotebook(user.name, tag, existingNotebook.widget.content.model.toJSON())
                 this.setState({notebooks: existingNotebooks, notebookCreator: false})
             }
         }

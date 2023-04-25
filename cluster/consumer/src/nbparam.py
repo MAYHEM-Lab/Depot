@@ -57,7 +57,7 @@ class DepotKernelManager(AsyncIOLoopKernelManager):
     autorestart = False
 
 
-def execute_notebook(tag, path, client, contents, data, sandbox_id):
+async def execute_notebook(entity, tag, dataset_tag, dataset_id, version, path, client, contents, data, sandbox_id):
     try:
         nb = nbformat.reads(json.dumps(contents), as_version=4)
         orig_parameters = extract_parameters(nb)
@@ -79,8 +79,19 @@ def execute_notebook(tag, path, client, contents, data, sandbox_id):
         timeout=180,
         kernel_name='depot'
         )
-        nb_client.execute(cleanup_kc=False)
-
-        logger.info(f'Successfully executed')
+        await nb_client.async_execute(cleanup_kc=False)
+        logger.info(f'Successfully executed notebook')
+        with open(f'/Users/samridhi/sandbox/{sandbox_id}/.outputs', 'r') as f:
+            for line in f.readlines():
+                payload = json.loads(line)
+                rows = payload['rows']
+                sample = payload['sample']
+                client.commit_segment(entity, dataset_tag, version, path, rows, sample)
+        logger.info(f'Successfully created segment [{entity}/{dataset_id}@{version}]')
+        if nb_client:
+            try:
+                await nb_client._async_cleanup_kernel()
+            except Exception as ex:
+                logger.exception("Error while cleaning kernel context", exc_info=ex)
     except Exception as ex:
         logger.exception("Error while transforming", exc_info=ex)

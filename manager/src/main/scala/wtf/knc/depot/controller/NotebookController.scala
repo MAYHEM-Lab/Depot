@@ -5,14 +5,12 @@ import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.Logging
 import com.twitter.util.Future
 import com.twitter.util.jackson.ScalaObjectMapper
-
 import javax.inject.{Inject, Provider, Singleton}
-import wtf.knc.depot.controller.NotebookController.{NotebookContentRequest, NotebookGetRequest, NotebookRequest, NotebookRoute, NotebookTopicRequest}
+import wtf.knc.depot.controller.NotebookController.{NotebookContentRequest, NotebookRequest, NotebookRoute}
 import wtf.knc.depot.dao.{ClusterDAO, EntityDAO, NotebookDAO}
 import wtf.knc.depot.model.{Notebook, Role}
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
-import wtf.knc.depot.beam.MinimalWordCount
 
 object NotebookController {
   trait NotebookRoute extends EntityRoute { val notebookTag: String }
