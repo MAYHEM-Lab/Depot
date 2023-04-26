@@ -42,13 +42,12 @@ class PublishPayload:
         return {'touched_datasets': self.touched_datasets, 'result_type': self.result_type}
 
 class PublishStreaming:
-    def __init__(self, touched_datasets, result_type, topic):
+    def __init__(self, touched_datasets, result_type):
         self.touched_datasets = touched_datasets
         self.result_type = result_type
-        self.topic = topic
 
     def depot_subscribe(self):
-        return {'touched_datasets': self.touched_datasets, 'result_type': self.result_type, 'topic':self.topic}
+        return {'touched_datasets': self.touched_datasets, 'result_type': self.result_type}
 
 class Executor:
     def read(self, location): raise NotImplementedError()
@@ -139,7 +138,7 @@ class DepotContext:
     def raw(self, dataset: str): raise NotImplementedError
     def table(self, dataset: str): raise NotImplementedError()
     def publish(self, payload): raise NotImplementedError()
-    def publish_streaming(self, payload, topic:str): raise NotImplementedError()
+    def publish_streaming(self, payload): raise NotImplementedError()
 
 
 
@@ -238,7 +237,7 @@ class ExploreContext(DepotContext):
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
         return PublishPayload(self.datasets, depot_schema)
 
-    def publish_streaming(self, payload, topic:str):
+    def publish_streaming(self, payload):
         if isinstance(payload, pyspark.sql.DataFrame):
             depot_schema = {
         'type': 'Table',
@@ -251,7 +250,7 @@ class ExploreContext(DepotContext):
         else:
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
 
-        return PublishStreaming(self.datasets, depot_schema, topic)
+        return PublishStreaming(self.datasets, depot_schema)
 
 class StreamContext(DepotContext):
     def __init__(self, depot_client, tag, path, executor):
@@ -279,7 +278,7 @@ class StreamContext(DepotContext):
     def publish(self, payload):
         return
 
-    def publish_streaming(self, payload, topic="messenger"):
+    def publish_streaming(self, payload):
         samples = []
         rows = 0
         if isinstance(payload, pyspark.sql.DataFrame):

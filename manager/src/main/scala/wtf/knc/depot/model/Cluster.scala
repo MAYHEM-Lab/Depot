@@ -23,6 +23,10 @@ case class TransformerInfo(
   transformer: String
 )
 
+case class ConsumerInfo(
+                            consumer: String
+                          )
+
 case class NotebookInfo(
   notebookMaster: String
 )

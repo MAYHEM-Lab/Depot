@@ -22,6 +22,7 @@ trait ClusterDAO {
   def spark(clusterId: Long): Future[Option[SparkInfo]]
   def notebook(clusterId: Long): Future[Option[NotebookInfo]]
   def transformer(clusterId: Long): Future[Option[TransformerInfo]]
+  def consumer(clusterId: Long): Future[Option[ConsumerInfo]]
 }
 
 @Singleton
@@ -52,6 +53,11 @@ class MysqlClusterDAO @Inject() (
   private def readTransformerInfo(r: Row): TransformerInfo = {
     val transformer = r.stringOrNull("transformer")
     TransformerInfo(transformer)
+  }
+
+  private def readConsumerInfo(r: Row): ConsumerInfo = {
+    val consumer = r.stringOrNull("consumer")
+    ConsumerInfo(consumer)
   }
 
   override def create(ownerId: Long, tag: String): Future[Long] = client.transaction { tx =>
@@ -112,6 +118,11 @@ class MysqlClusterDAO @Inject() (
   override def transformer(clusterId: Long): Future[Option[TransformerInfo]] = client
     .prepare("SELECT * FROM transformer_info WHERE cluster_id = ?")
     .select(clusterId)(readTransformerInfo)
+    .map(_.headOption)
+
+  override def consumer(clusterId: Long): Future[Option[ConsumerInfo]] = client
+    .prepare("SELECT * FROM consumer_info WHERE cluster_id = ?")
+    .select(clusterId)(readConsumerInfo)
     .map(_.headOption)
 
   override def notebook(clusterId: Long): Future[Option[NotebookInfo]] = client

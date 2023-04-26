@@ -3,11 +3,13 @@ package wtf.knc.depot.controller
 import java.net.URLEncoder
 import java.nio.charset.Charset
 import java.util.{Base64, UUID}
-
 import com.twitter.conversions.DurationOps._
+import com.twitter.finagle.Http
+import com.twitter.finagle.http.{MediaType, Method, Request, Version}
 import com.twitter.finatra.http.Controller
 import com.twitter.finatra.http.annotations.RouteParam
 import com.twitter.inject.annotations.Flag
+import com.twitter.util.jackson.ScalaObjectMapper
 import com.twitter.util.{Duration, Future, FuturePool}
 
 import javax.inject.{Inject, Provider, Singleton}
@@ -20,6 +22,7 @@ import wtf.knc.depot.model.Datatype.Table.ColumnType
 import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
+import wtf.knc.depot.notebook.TransformDispatcher.{ConsumerRequest, ConsumerResponse}
 import wtf.knc.depot.service.{CloudService, TransitionHandler}
 
 import scala.util.control.NonFatal
@@ -65,6 +68,8 @@ object DatasetController {
     schedule: Option[Duration],
     clusterAffinity: Option[String],
     topic: String,
+    window: Long,
+    bootstrapServer:String
   ) extends DatasetRoute
 
   private case class UploadDataset(
@@ -189,7 +194,8 @@ class DatasetController @Inject() (
   cloudService: CloudService,
   transitionHandler: TransitionHandler,
   publisher: Publisher,
-  s3: RestS3Service
+  s3: RestS3Service,
+  objectMapper: ScalaObjectMapper
 ) extends Controller
   with EntityRequests
   with DatasetRequests
@@ -260,6 +266,30 @@ class DatasetController @Inject() (
     } yield LocateResponse(location, locations)
   }
 
+  private def start_consumer(
+                      clusterId: Long,
+                      topic: String,
+                      window: Long,
+                      bootstrapServer: String
+                    ): Future[String] = {
+
+    clusterDAO.consumer(1).flatMap {
+        case  (Some(consumerInfo)) =>
+          val client = Http.client.newService(consumerInfo.consumer)
+          val body = ConsumerRequest(topic, window, bootstrapServer)
+          val data = objectMapper.writeValueAsBuf(body)
+          val request = Request(Version.Http11, Method.Post, "/consume")
+          request.content = data
+          request.contentType = MediaType.Json
+          client(request)
+            .map { response =>
+              objectMapper.parse[ConsumerResponse](response.content)
+            }.map(_.success)
+            .ensure(client.close())
+        case _ => Future.exception(new Exception(s"Cluster $clusterId does not have a transformer"))
+      }
+  }
+
   prefix("/api/entity/:entity_name/datasets") {
     get("/?") { implicit req: EntityRequest =>
       entity(None).flatMap { owner =>
@@ -310,11 +340,15 @@ class DatasetController @Inject() (
             require(req.triggers.isEmpty)
             require(req.content.isEmpty)
             require(req.topic.isEmpty)
+            require(req.window.isNaN)
+            require(req.bootstrapServer.isEmpty)
             // no notebook
             // no message dispatch
           }
           if (req.origin == Origin.Managed) {
             require(req.topic.isEmpty)
+            require(req.window.isNaN)
+            require(req.bootstrapServer.isEmpty)
           }
 
           require(req.retention.forall(_ >= 1.minute))
@@ -341,10 +375,11 @@ class DatasetController @Inject() (
             .getOrElse(Future.None)
 
           val notifyCloud = cloudService.createDataset(owner.name, req.datasetTag)
+          val startConsumer = start_consumer(1, req.topic, req.window, req.bootstrapServer)
 
           Future
-            .join(notifyCloud, findCluster)
-            .flatMap { case (_, clusterAffinity) =>
+            .join(notifyCloud, findCluster, startConsumer)
+            .flatMap { case (_, clusterAffinity, _) =>
               datasetDAO
                 .create(
                   req.datasetTag,
@@ -381,6 +416,7 @@ class DatasetController @Inject() (
                           }
                           .before {
                             transformationDAO.create(targetDatasetId, notebookId)
+
                           }
                           .before {
                             streamingTransformationDAO.create(targetDatasetId, req.topic, notebookId).map(_ => targetDatasetId)

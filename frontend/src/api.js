@@ -265,7 +265,10 @@ export default {
             triggers: [],
             isolated: true,
             schedule: null,
-            retention: null
+            retention: null,
+            topic: null,
+            window:null,
+            bootstrapServer:null
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',
@@ -304,7 +307,9 @@ export default {
             isolated: isolated,
             schedule: frequency,
             retention: retention,
-            topic: null
+            topic: null,
+            window:null,
+            bootstrapServer:null
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',
@@ -321,12 +326,9 @@ export default {
         content,
         datatype,
         visibility,
-        storageClass,
-        sources,
-        isolated,
-        frequency,
-        retention,
-        topic
+        topic,
+        window,
+        bootstrapServer
     ) => {
         const body = {
             description: description,
@@ -339,7 +341,9 @@ export default {
             isolated: true,
             schedule: null,
             retention: null,
-            topic:topic
+            topic:topic,
+            window:window,
+            bootstrap_server: bootstrapServer
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',
