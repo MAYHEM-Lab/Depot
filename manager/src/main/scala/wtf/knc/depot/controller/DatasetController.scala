@@ -22,7 +22,6 @@ import wtf.knc.depot.model.Datatype.Table.ColumnType
 import wtf.knc.depot.model._
 import wtf.knc.depot.notebook.NotebookStore
 import wtf.knc.depot.notebook.NotebookStore.NotebookContents
-import wtf.knc.depot.notebook.TransformDispatcher.{ConsumerRequest, ConsumerResponse}
 import wtf.knc.depot.service.{CloudService, TransitionHandler}
 
 import scala.util.control.NonFatal
@@ -81,7 +80,24 @@ object DatasetController {
   private case class CreateTopicSegment(
     @RouteParam entityName: String,
     @RouteParam datasetId: Long,
+    topic: String,
+    partition: Long,
+    start_offset: Long,
+    end_offset: Long,
+    notebook_tag: String,
+    bootstrap_server: String
   ) extends DatasetByIdRoute
+
+  private case class AllocateSegmentRequest(
+    @RouteParam datasetId: Long,
+    @RouteParam segmentId: Long,
+    @RouteParam entityName: String,
+                                           ) extends EntityRoute
+
+  private case class AllocatePathResponse(
+                                               bucket: String,
+                                               datasetTag: String,
+                                               root: String )
 
 
   private case class UpdateDataset(
@@ -111,9 +127,9 @@ object DatasetController {
   )
 
   private case class StreamingSegmentResponse(
-    bucket: String,
     datasetTag: String,
-    root: String )
+    segmentId: Long,
+    segmentVersion: Long)
 
 
   private case class ProvenanceResponse(
@@ -143,6 +159,30 @@ object DatasetController {
     self: SparkLocation,
     inputs: Map[String, SparkLocation]
   )
+
+  case class ConsumerRequest(
+    notebookTag: String,
+                              topic: String,
+                              datasetTag: String,
+                              datasetId: Long,
+                              window: Long,
+                              bootstrapServer: String)
+
+  case class ConsumerResponse(
+                               success: String
+                             )
+
+
+  case class AnnounceStreamingRequest(
+                                       datasetId: Long,
+                                       segmentId: Long,
+                                       segmentVersion: Long,
+                                       startOffset: Long,
+                                       endOffset: Long,
+                                       notebookTag: String,
+                                       topic: String,
+                                       bootstrapServer: String
+                                     )
 
   case class AddCollaborator(
     @RouteParam entityName: String,
@@ -202,8 +242,12 @@ class DatasetController @Inject() (
   with Authentication {
   private final val UploadBucket = s"$deployment.uploads"
 
-  private def createResponseForStreamingSegment(bucket: String, datasetTag: String, root: String): StreamingSegmentResponse = {
-      return StreamingSegmentResponse(bucket, datasetTag, root)
+  private def createResponseForStreamingSegment(datasetTag: String, segmentId: Long, segmentVersion:Long): Future[StreamingSegmentResponse] = {
+      return Future.value((StreamingSegmentResponse(datasetTag, segmentId, segmentVersion)))
+  }
+
+  private def createAllocatePathResponse(bucket: String, datasetTag: String, root: String): AllocatePathResponse = {
+    return AllocatePathResponse(bucket, datasetTag, root)
   }
 
   private def convertColumnType(columnType: ColumnType): String = columnType match {
@@ -268,6 +312,9 @@ class DatasetController @Inject() (
 
   private def start_consumer(
                       clusterId: Long,
+                      notebookTag: String,
+                      datasetId: Long,
+                      datasetTag: String,
                       topic: String,
                       window: Long,
                       bootstrapServer: String
@@ -276,7 +323,7 @@ class DatasetController @Inject() (
     clusterDAO.consumer(1).flatMap {
         case  (Some(consumerInfo)) =>
           val client = Http.client.newService(consumerInfo.consumer)
-          val body = ConsumerRequest(topic, window, bootstrapServer)
+          val body = ConsumerRequest(notebookTag, topic, datasetTag, datasetId, window, bootstrapServer)
           val data = objectMapper.writeValueAsBuf(body)
           val request = Request(Version.Http11, Method.Post, "/consume")
           request.content = data
@@ -289,6 +336,35 @@ class DatasetController @Inject() (
         case _ => Future.exception(new Exception(s"Cluster $clusterId does not have a transformer"))
       }
   }
+
+  private def start_stream_announce(
+                              dataset_id: Long,
+                              segment_id: Long,
+                              segment_version: Long,
+                              start_offset: Long,
+                              end_offset: Long,
+                              topic: String,
+                              notebook_tag: String,
+                              bootstrap_server: String
+                            ): Future[String] = {
+    clusterDAO.byId(1).flatMap { cluster =>
+      clusterDAO.consumer(cluster.id).flatMap {
+        case  (Some(consumerInfo)) =>
+          val client = Http.client.newService(consumerInfo.consumer)
+          val body = AnnounceStreamingRequest(dataset_id, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
+          val data = objectMapper.writeValueAsBuf(body)
+          val request = Request(Version.Http11, Method.Post, "/announce")
+          request.content = data
+          request.contentType = MediaType.Json
+          client(request)
+            .map { response =>
+              objectMapper.parse[ConsumerResponse](response.content)
+            }.map(_.success)
+            .ensure(client.close())
+        case _ => Future.exception(new Exception(s"Cluster ${cluster.id} does not have a transformer"))
+      }
+    }
+    }
 
   prefix("/api/entity/:entity_name/datasets") {
     get("/?") { implicit req: EntityRequest =>
@@ -312,7 +388,9 @@ class DatasetController @Inject() (
 
         datasetDAO.byOwner(owner.id).flatMap { datasets =>
           val filtered = datasets.map { dataset =>
-            authFilter(dataset).map { if (_) Some(dataset) else None }
+            authFilter(dataset).map {
+              if (_) Some(dataset) else None
+            }
           }
           Future.collect(filtered).map(_.flatten)
         }
@@ -321,9 +399,9 @@ class DatasetController @Inject() (
 
 
     prefix("/topics/:topic") {
-        get("/?") { implicit req: DatasetTopicRequest =>
-          streamingTransformationDAO.getByTopic(req.topic).map(response.ok)
-        }
+      get("/?") { implicit req: DatasetTopicRequest =>
+        streamingTransformationDAO.getByTopic(req.topic).map(response.ok)
+      }
     }
 
     prefix("/:dataset_tag") {
@@ -374,12 +452,12 @@ class DatasetController @Inject() (
             }
             .getOrElse(Future.None)
 
+
           val notifyCloud = cloudService.createDataset(owner.name, req.datasetTag)
-          val startConsumer = start_consumer(1, req.topic, req.window, req.bootstrapServer)
 
           Future
-            .join(notifyCloud, findCluster, startConsumer)
-            .flatMap { case (_, clusterAffinity, _) =>
+            .join(notifyCloud, findCluster)
+            .flatMap { case (_, clusterAffinity) =>
               datasetDAO
                 .create(
                   req.datasetTag,
@@ -416,12 +494,13 @@ class DatasetController @Inject() (
                           }
                           .before {
                             transformationDAO.create(targetDatasetId, notebookId)
-
                           }
                           .before {
                             streamingTransformationDAO.create(targetDatasetId, req.topic, notebookId).map(_ => targetDatasetId)
+                            start_consumer(1, notebookId, targetDatasetId, req.datasetTag,  req.topic, req.window, req.bootstrapServer)
                           }
-                      }
+
+                        }
                       else {
                         Future.Done
                       }
@@ -775,18 +854,29 @@ class DatasetController @Inject() (
             }
           }
 
-          post("/materialize") { implicit req: DatasetVersionRequest =>
-            segment(Some(Role.Owner)).flatMap { segment =>
-              if (segment.state == SegmentState.Announced) {
-                val id = client match {
-                  case Some(Auth.User(userId)) => userId
-                  case _ => -1
+          prefix("/materialize") {
+            post("/?") { implicit req: DatasetVersionRequest =>
+              segment(Some(Role.Owner)).flatMap { segment =>
+                if (segment.state == SegmentState.Announced) {
+                  val id = client match {
+                    case Some(Auth.User(userId)) => userId
+                    case _ => -1
+                  }
+                  publisher
+                    .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id, id))))
+                    .map(_ => response.created(segment.id))
+                } else {
+                  Future.value(response.badRequest(s"Segment has state ${segment.state}"))
                 }
-                 publisher
-                  .publish(Message.SegmentTransition(segment.id, Transition.Await(Trigger.Manual(id, id))))
-                  .map(_ => response.created(segment.id))
-              } else {
-                Future.value(response.badRequest(s"Segment has state ${segment.state}"))
+              }
+            }
+            prefix("/stream") {
+              post("/?") { implicit req: DatasetVersionRequest =>
+                dataset(Some(Role.Owner)).flatMap { dataset =>
+                  segmentDAO.getSegmentAnnounce(dataset.id, req.version)
+                }.map { segment =>
+                  start_stream_announce(segment.datasetId,  segment.segmentId, segment.segmentVersion, segment.startOffset, segment.endOffset, segment.topic, segment.notebookTag, segment.bootstrapServer)
+                }
               }
             }
           }
@@ -836,10 +926,10 @@ class DatasetController @Inject() (
             }
           }
         }
+      }
     }
-  }
-    prefix("/:dataset_id") {
-      post("/segment") { implicit req: CreateTopicSegment =>
+    prefix("/:dataset_id/segment") {
+      post("/?") { implicit req: CreateTopicSegment =>
         entity(Some(Role.Member)).flatMap { owner =>
           datasetDAO.byId(req.datasetId).flatMap { dataset =>
             require(dataset.origin == Origin.Streaming, "Only streaming dataset can call this endpoint")
@@ -850,15 +940,33 @@ class DatasetController @Inject() (
             }
             segmentDAO.make(dataset.id).flatMap { segmentId =>
               segmentDAO
-                .byId(segmentId)
-                .map { segment =>
-                  val (bucket, root) = cloudService.allocatePath(owner, dataset, segment)
-                  createResponseForStreamingSegment(bucket, dataset.tag, root)
-                }
+                .byId(segmentId).flatMap { segment => {
+                segmentDAO.insertSegmentAnnounce(req.datasetId, segment.id, segment.version, req.topic, req.start_offset, req.end_offset, req.notebook_tag, req.bootstrap_server)
+                createResponseForStreamingSegment(dataset.tag, segment.id, segment.version)
+              }
+              }.join {
+                transitionHandler.handleTransition(segmentId, Transition.Announce.apply(Trigger.Creation(dataset.id)))
+              }
             }
-          }
-        }.map(response.ok)
+          }.map(_._1)
+        }
       }
+        post("/:segment_id") { implicit req: AllocateSegmentRequest =>
+          entity(Some(Role.Member)).flatMap { owner =>
+            datasetDAO.byId(req.datasetId).flatMap { dataset =>
+              require(dataset.origin == Origin.Streaming, "Only streaming dataset can call this endpoint")
+              logger.info(s"Creating new segment for ${owner.name}/${dataset.tag}")
+              val id = client match {
+                case Some(Auth.User(userId)) => userId
+                case _ => -1
+              }
+              segmentDAO.byId(req.segmentId).map { segment =>
+                val (bucket, root) = cloudService.allocatePath(owner, dataset, segment)
+                createAllocatePathResponse(bucket, dataset.tag, root)
+              }
+            }
+          }.map(response.ok)
+        }
     }
   }
 }

@@ -14,6 +14,7 @@ import pyspark
 from pyspark import SparkConf
 import threading
 import queue
+import requests
 
 S3_REGEX = r'^s3a://(.*?)/(.*?)$'
 
@@ -53,6 +54,32 @@ class Executor:
     def read(self, location): raise NotImplementedError()
     def write(self, dataset, path): raise NotImplementedError()
 
+
+class AnnounceConsumer:
+    def __init__(self, entity, depot_client, dataset_id, segment_version, topic, start_offset, end_offset, notebook_tag):
+
+        self.dataset_id = dataset_id
+        self.segment_version = segment_version
+        self.topic = topic
+        self.entity = entity
+        self.start_offset = start_offset
+        self.end_offset = end_offset
+        self.notebook_tag = notebook_tag
+        self.depot_client = depot_client
+
+    def send_announce_segment_request(self):
+        r = requests.post(
+            f'{self.depot_client.depot_destination}/api/entity/{self.entity}/datasets/topic/segments/announce', json={
+                'dataset_id': self.dataset_id,
+                'segment_version': self.segment_version,
+                'topic': self.topic,
+                'start_offset':self.start_offset,
+                'end_offset':self.end_offset,
+                'notebook_tag':self.notebook_tag,
+            },
+            headers={'access_key': self.depot_client.access_key}
+        )
+        assert r.status_code == 201
 
 class SparkExecutor(Executor):
     def __init__(self, depot_client, app_name='depot'):
@@ -196,8 +223,11 @@ class TransformContext(DepotContext):
             f.write(json.dumps(result))
             f.write('\n')
 
-    def publish_streaming(self, payload, topic:str):
-        return
+    def publish_streaming(self, payload):
+        self.publish(payload)
+
+    def announce(self, payload):
+        self.publish(payload)
 
 class ExploreContext(DepotContext):
     def __init__(self, depot_client, executor):
@@ -252,13 +282,22 @@ class ExploreContext(DepotContext):
 
         return PublishStreaming(self.datasets, depot_schema)
 
+    def materialize_streaming(self, payload):
+        return
+
+    def announce(self, topic):
+        return
+
 class StreamContext(DepotContext):
-    def __init__(self, depot_client, tag, path, executor):
+    def __init__(self, depot_client, tag, entity, dataset_id, segment_id, executor, sandbox_id):
         self.depot_client = depot_client
         self.executor = executor
         self.datasets = set()
         self.tag = tag
-        self.target_path= path
+        self.sandbox_id = sandbox_id
+        self.entity = entity
+        self.dataset_id = dataset_id
+        self.segment_id = segment_id
 
 
     def raw(self, dataset: str):
@@ -278,11 +317,20 @@ class StreamContext(DepotContext):
     def publish(self, payload):
         return
 
-    def publish_streaming(self, payload):
+    def materialize_streaming(self, payload):
         samples = []
         rows = 0
+        r = requests.post(
+            f'{self.depot_client.depot_destination}/api/entity/{self.entity}/datasets/{self.dataset_id}/segment/{self.segment_id}',
+            headers={'access_key': self.depot_client.access_key}
+        )
+        bucket = r.json().get('bucket')
+        key = r.json().get('root')
+        version = int(key.split("/")[1])
+        dataset_tag = r.json().get('dataset_tag')
+        path = f"s3a://{bucket}/{key}"
         if isinstance(payload, pyspark.sql.DataFrame):
-            self.executor.write(payload, self.target_path)
+            self.executor.write(payload, path)
             rows = payload.count()
             samples = list(map(lambda r: list(map(lambda v: str(v)[0:SAMPLE_COLUMN_SIZE], r.asDict().values())), payload.take(SAMPLE_ROWS)))
         elif isinstance(payload, dict):
@@ -298,15 +346,112 @@ class StreamContext(DepotContext):
                 with src as fp:
                     samples.append([key, str(size), type, base64.b64encode(fp.read(SAMPLE_BYTES)).decode('ascii')])
                     fp.seek(0)
-                    self.executor.upload(self.target_path, fp)
-
+                    self.executor.upload(path, fp)
         else:
             raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
-        with open('.outputs', 'a+') as f:
-            result = {
-                'rows': rows,
-                'sample': samples
-            }
-            f.write(json.dumps(result))
-            f.write('\n')
+        try:
+            with open('.outputs', 'a+') as f:
+                result = {
+                    'rows': rows,
+                    'sample': samples
+                }
+                f.write(json.dumps(result))
+                f.write('\n')
+            with open(f'.outputs', 'r') as f:
+                for line in f.readlines():
+                    payload = json.loads(line)
+                    rows = payload['rows']
+                    sample = payload['sample']
+                    self.depot_client.commit_segment(self.entity, dataset_tag, version, path, rows, sample)
+        except Exception as ex:
+            raise Exception("Segment commit failed")
 
+    def publish_streaming(self, payload):
+        return
+
+    def announce(self, payload):
+        return "segment is announced"
+
+class AnnounceStreamContext(DepotContext):
+    def __init__(self, depot_client, tag, entity, dataset_id, segment_id, executor, sandbox_id):
+        self.depot_client = depot_client
+        self.executor = executor
+        self.datasets = set()
+        self.tag = tag
+        self.sandbox_id = sandbox_id
+        self.entity = entity
+        self.dataset_id = dataset_id
+        self.segment_id = segment_id
+
+
+    def raw(self, dataset: str):
+        (entity, tag) = dataset.split('/')
+        location = self.depot_client.locate_dataset(entity, tag)['self']
+        self.datasets.add(dataset)
+        target_dir = f'.data/{entity}/{tag}'
+        os.makedirs(target_dir, 0o777, exist_ok=True)
+        return self.executor.download(location, target_dir)
+
+    def table(self, dataset: str):
+        (entity, tag) = dataset.split('/')
+        location = self.depot_client.locate_dataset(entity, tag)['self']
+        self.datasets.add(dataset)
+        return self.executor.read(location)
+
+    def publish(self, payload):
+        return
+
+    def materialize_streaming(self, payload):
+        samples = []
+        rows = 0
+        r = requests.post(
+            f'{self.depot_client.depot_destination}/api/entity/{self.entity}/datasets/{self.dataset_id}/segment/{self.segment_id}',
+            headers={'access_key': self.depot_client.access_key}
+        )
+        bucket = r.json().get('bucket')
+        key = r.json().get('root')
+        version = int(key.split("/")[1])
+        dataset_tag = r.json().get('dataset_tag')
+        path = f"s3a://{bucket}/{key}"
+        if isinstance(payload, pyspark.sql.DataFrame):
+            self.executor.write(payload, path)
+            rows = payload.count()
+            samples = list(map(lambda r: list(map(lambda v: str(v)[0:SAMPLE_COLUMN_SIZE], r.asDict().values())), payload.take(SAMPLE_ROWS)))
+        elif isinstance(payload, dict):
+            for key, data in payload.items():
+                if isinstance(data, bytes):
+                    size = len(data)
+                    type = 'application/octet-stream'
+                    src = io.BytesIO(data)
+                else:
+                    size = os.path.getsize(data)
+                    type = mimetypes.MimeTypes().guess_type(data)[0]
+                    src = open(data, 'rb')
+                with src as fp:
+                    samples.append([key, str(size), type, base64.b64encode(fp.read(SAMPLE_BYTES)).decode('ascii')])
+                    fp.seek(0)
+                    self.executor.upload(path, fp)
+        else:
+            raise Exception('Unrecognized payload type. dict(str, bytes), dict(str, str), or pyspark.sql.DataFrame required')
+        try:
+            with open('.outputs', 'a+') as f:
+                result = {
+                    'rows': rows,
+                    'sample': samples
+                }
+                f.write(json.dumps(result))
+                f.write('\n')
+            with open('.outputs', 'r') as f:
+                for line in f.readlines():
+                    payload = json.loads(line)
+                    rows = payload['rows']
+                    sample = payload['sample']
+                    self.depot_client.commit_segment(self.entity, dataset_tag, version, path, rows, sample)
+        except:
+            raise Exception('Client commit failed')
+
+    def publish_streaming(self, payload):
+        self.materialize_streaming(payload)
+
+    def announce(self, payload):
+        self.materialize_streaming(payload)

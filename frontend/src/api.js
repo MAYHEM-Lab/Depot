@@ -164,6 +164,14 @@ export default {
             .then(response => response.json())
     },
 
+    materializeStreamingSegment: (owner, tag, version) => {
+        return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/segments/${version}/materialize/stream`, {
+            method: 'POST'
+        })
+            .then(handleErrors)
+            .then(response => response.json())
+    },
+
     getHistory: (owner, tag, version) => {
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}/segments/${version}/history`)
             .then(handleErrors)

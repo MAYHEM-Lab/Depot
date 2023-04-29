@@ -29,6 +29,17 @@ case class SegmentInput(
   binding: String
 )
 
+case class SegmentAnnounceData(
+  datasetId: Long,
+  segmentId: Long,
+  startOffset: Long,
+  endOffset: Long,
+  topic: String,
+  notebookTag: String,
+  segmentVersion: Long,
+  bootstrapServer: String
+                              )
+
 @JsonSerialize(`using` = classOf[StateSerializer])
 @JsonDeserialize(`using` = classOf[StateDeserializer])
 sealed abstract class SegmentState(val name: String)

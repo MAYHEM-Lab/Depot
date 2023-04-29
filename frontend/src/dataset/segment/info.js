@@ -22,11 +22,19 @@ export default function SegmentInfo() {
     const requestMaterialization = async () => {
         setMatLoading(true)
         setMatRequested(true)
+        if (dataset.origin == 'Streaming') {
+            try {
+            await API.materializeStreamingSegment(entity.name, dataset.tag, version)
+            } finally {
+                setMatLoading(false)
+            }
+        } else {
         try {
             await API.materializeSegment(entity.name, dataset.tag, version)
         } finally {
             setMatLoading(false)
         }
+    }
     }
 
     const requestDownload = async () => {

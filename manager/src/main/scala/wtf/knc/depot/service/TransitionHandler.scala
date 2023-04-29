@@ -53,6 +53,14 @@ class TransitionHandler @Inject() (
                 }
               }
 
+            case SegmentState.Announced -> Transition.Materialize(data, _,_,_) =>
+              logger.info("Segment was materialized")
+              segmentDAO.updateRefSize(segmentId, data.size).before {
+                segmentDAO.setData(segmentId, data).before {
+                  propagateAnnouncement(segmentId)
+                }
+              }
+
             case SegmentState.Initializing -> Transition.Announce(trigger) =>
               logger.info(s"Propagating announcements for segment $segmentId, triggered by: $trigger")
               propagateAnnouncement(segmentId)
