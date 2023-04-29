@@ -451,7 +451,7 @@ class AnnounceStreamContext(DepotContext):
             raise Exception('Client commit failed')
 
     def publish_streaming(self, payload):
-        self.materialize_streaming(payload)
+       return
 
     def announce(self, payload):
         self.materialize_streaming(payload)

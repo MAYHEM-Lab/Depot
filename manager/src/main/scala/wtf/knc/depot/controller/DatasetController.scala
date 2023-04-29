@@ -235,7 +235,7 @@ class DatasetController @Inject() (
   transitionHandler: TransitionHandler,
   publisher: Publisher,
   s3: RestS3Service,
-  objectMapper: ScalaObjectMapper
+  objectMapper: ScalaObjectMapper,
 ) extends Controller
   with EntityRequests
   with DatasetRequests
@@ -311,7 +311,6 @@ class DatasetController @Inject() (
   }
 
   private def start_consumer(
-                      clusterId: Long,
                       notebookTag: String,
                       datasetId: Long,
                       datasetTag: String,
@@ -320,21 +319,25 @@ class DatasetController @Inject() (
                       bootstrapServer: String
                     ): Future[String] = {
 
-    clusterDAO.consumer(1).flatMap {
-        case  (Some(consumerInfo)) =>
-          val client = Http.client.newService(consumerInfo.consumer)
-          val body = ConsumerRequest(notebookTag, topic, datasetTag, datasetId, window, bootstrapServer)
-          val data = objectMapper.writeValueAsBuf(body)
-          val request = Request(Version.Http11, Method.Post, "/consume")
-          request.content = data
-          request.contentType = MediaType.Json
-          client(request)
-            .map { response =>
-              objectMapper.parse[ConsumerResponse](response.content)
-            }.map(_.success)
-            .ensure(client.close())
-        case _ => Future.exception(new Exception(s"Cluster $clusterId does not have a transformer"))
+    datasetDAO.byId(datasetId).flatMap { dataset =>
+      clusterDAO.byOwner(dataset.ownerId).flatMap { clusterList =>
+        clusterDAO.consumer(clusterList.headOption.get.id).flatMap {
+          case (Some(consumerInfo)) =>
+            val client = Http.client.newService(consumerInfo.consumer)
+            val body = ConsumerRequest(notebookTag, topic, datasetTag, datasetId, window, bootstrapServer)
+            val data = objectMapper.writeValueAsBuf(body)
+            val request = Request(Version.Http11, Method.Post, "/consume")
+            request.content = data
+            request.contentType = MediaType.Json
+            client(request)
+              .map { response =>
+                objectMapper.parse[ConsumerResponse](response.content)
+              }.map(_.success)
+              .ensure(client.close())
+          case _ => Future.exception(new Exception(s"Cluster ${clusterList.headOption.get.id} does not have a consumer"))
+        }
       }
+    }
   }
 
   private def start_stream_announce(
@@ -347,24 +350,26 @@ class DatasetController @Inject() (
                               notebook_tag: String,
                               bootstrap_server: String
                             ): Future[String] = {
-    clusterDAO.byId(1).flatMap { cluster =>
-      clusterDAO.consumer(cluster.id).flatMap {
-        case  (Some(consumerInfo)) =>
-          val client = Http.client.newService(consumerInfo.consumer)
-          val body = AnnounceStreamingRequest(dataset_id, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
-          val data = objectMapper.writeValueAsBuf(body)
-          val request = Request(Version.Http11, Method.Post, "/announce")
-          request.content = data
-          request.contentType = MediaType.Json
-          client(request)
-            .map { response =>
-              objectMapper.parse[ConsumerResponse](response.content)
-            }.map(_.success)
-            .ensure(client.close())
-        case _ => Future.exception(new Exception(s"Cluster ${cluster.id} does not have a transformer"))
-      }
+    datasetDAO.byId(dataset_id).flatMap { dataset =>
+      clusterDAO.byOwner(dataset.ownerId).flatMap { clusterList =>
+        clusterDAO.consumer(clusterList.headOption.get.id).flatMap {
+            case (Some(consumerInfo)) =>
+              val client = Http.client.newService(consumerInfo.consumer)
+              val body = AnnounceStreamingRequest(dataset_id, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
+              val data = objectMapper.writeValueAsBuf(body)
+              val request = Request(Version.Http11, Method.Post, "/announce")
+              request.content = data
+              request.contentType = MediaType.Json
+              client(request)
+                .map { response =>
+                  objectMapper.parse[ConsumerResponse](response.content)
+                }.map(_.success)
+                .ensure(client.close())
+            case _ => Future.exception(new Exception(s"Cluster ${clusterList.headOption.get.id} does not have a consumer"))
+          }
+        }
     }
-    }
+  }
 
   prefix("/api/entity/:entity_name/datasets") {
     get("/?") { implicit req: EntityRequest =>
@@ -497,7 +502,7 @@ class DatasetController @Inject() (
                           }
                           .before {
                             streamingTransformationDAO.create(targetDatasetId, req.topic, notebookId).map(_ => targetDatasetId)
-                            start_consumer(1, notebookId, targetDatasetId, req.datasetTag,  req.topic, req.window, req.bootstrapServer)
+                            start_consumer(notebookId, targetDatasetId, req.datasetTag,  req.topic, req.window, req.bootstrapServer)
                           }
 
                         }
