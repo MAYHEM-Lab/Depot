@@ -169,7 +169,7 @@ export default {
             method: 'POST'
         })
             .then(handleErrors)
-            .then(response => response.json())
+            .then(response => response.text())
     },
 
     getHistory: (owner, tag, version) => {

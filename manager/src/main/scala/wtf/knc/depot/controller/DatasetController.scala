@@ -877,10 +877,18 @@ class DatasetController @Inject() (
             }
             prefix("/stream") {
               post("/?") { implicit req: DatasetVersionRequest =>
-                dataset(Some(Role.Owner)).flatMap { dataset =>
+                val announced = dataset(Some(Role.Owner)).flatMap { dataset =>
                   segmentDAO.getSegmentAnnounce(dataset.id, req.version)
-                }.map { segment =>
+                }.flatMap { segment =>
                   start_stream_announce(segment.datasetId,  segment.segmentId, segment.segmentVersion, segment.startOffset, segment.endOffset, segment.topic, segment.notebookTag, segment.bootstrapServer)
+                }.map{ response =>
+                    response.contains("true")
+                }
+               announced.flatMap {
+                 case true =>
+                  Future.value(response.created("segment created successfully"))
+                 case false =>
+                 Future.value(response.internalServerError)
                 }
               }
             }

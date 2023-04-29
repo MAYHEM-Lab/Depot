@@ -25,8 +25,18 @@ export default function SegmentInfo() {
         if (dataset.origin == 'Streaming') {
             try {
             await API.materializeStreamingSegment(entity.name, dataset.tag, version)
-            } finally {
+            }
+            catch(error) {
+                alert(error)
+            }
+             finally {
+                if (segment.state == 'Materialized') {
                 setMatLoading(false)
+                alert("segment was succesfully materialized, please refresh page to view it.")
+                } else {
+                    setMatLoading(false)
+                    setMatRequested(false)
+                }
             }
         } else {
         try {

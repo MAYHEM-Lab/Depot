@@ -336,7 +336,7 @@ export default class StreamingDatasetCreator extends Component {
 
     nextPage = () => {
         const {step} = this.state
-        this.setState({step: Math.min(step + 1, 3)})
+        this.setState({step: Math.min(step + 1, 2)})
     }
 
     prevPage = () => {
@@ -379,11 +379,11 @@ export default class StreamingDatasetCreator extends Component {
         const {step} = this.state
         const {payload: {touchedDatasets}} = this.props
 
-        const infoValid = tag.length && tagValid && owner && topic.length && window && bootstrapServer
+        const infoValid = tag.length && tagValid && owner 
         const matValid = manual || frequency
         const ttlValid = unbounded || retention
 
-        const stepValid = [infoValid, matValid, ttlValid]
+        const stepValid = [infoValid]
 
         return <Segment className='streaming_dataset_creator' textAlign='center'>
             {createdTag ?
@@ -391,7 +391,7 @@ export default class StreamingDatasetCreator extends Component {
                     <Icon size='huge' name='check circle outline' color='green'/>
                     <Header>Defined dataset <Link to={`/${owner}/datasets/${createdTag}`}>{`${owner}/${createdTag}`}</Link></Header>
                 </> :
-                <Form onSubmit={() => step === 2 ? this.createStreamingDataset() : this.nextPage()}>
+                <Form onSubmit={() => step === 1 ? this.createStreamingDataset() : this.nextPage()}>
                     <div className={'dataset-create-step ' + (step === 0 ? '' : 'hidden')}>
                         <Header as='h3'>Information</Header>
                         <Segment basic textAlign='left'>
@@ -410,15 +410,33 @@ export default class StreamingDatasetCreator extends Component {
                             />
                             <OwnerInput onSelect={(owner) => this.setState({owner: owner})}/>
                             <VisibilityInput onSelect={(visibility) => this.setState({visibility: visibility})}/>
+                        </Segment>
+                    </div>
+                    <div className = {'dataset-create-step ' + (step===1 ? '': 'hidden')}>
+                        <Header as ='h3'> Streaming Info </Header>
+                        <Segment basic textAlign='left'>
                             <Form.TextArea label='Description' onChange={(e, d) => this.setState({description: d.value})}/>
                             <Form.Input label='Topic' onChange={(e,d) => this.setState({topic: d.value})}/>
                             <Form.Input label='Window' onChange={(e,d) => this.setState({window: d.value})}/>
                             <Form.Input label='Bootstrap Server' onChange={(e,d) => this.setState({bootstrapServer: d.value})}/>
-                        </Segment>
+                            </Segment>
                     </div>
-
                     <Segment basic>
-                            <Button type='submit' disabled={!(infoValid)} positive loading={loading}>Create</Button>
+                        {step !== 0 ?
+                            <Button type='button' secondary onClick={this.prevPage}>Back</Button>
+                            : null
+                        }
+                        {step !== 1 ?
+                            <Button type='button' disabled={!stepValid[step]} primary onClick={this.nextPage}>Next</Button>
+                            : null
+                        }
+                        {step === 1 ?
+                            <Button type='submit' disabled={!(infoValid && topic.length && window && bootstrapServer)} positive loading={loading}>Create</Button>
+                            : null
+                        }
+                    </Segment>
+                    <Segment basic>
+                           
                     
                     </Segment>
                 </Form>

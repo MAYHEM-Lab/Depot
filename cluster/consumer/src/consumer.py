@@ -31,7 +31,8 @@ async def consume(options, depot_client, notebook_tag, dataset_tag, dataset_id, 
         if len(data) == 0:
             print(f"starting offset: {msg.offset()}")
             start_offset = msg.offset()
-        if len(data) == int(window_length):
+        if len(data) == int(window_length) - 1:
+            data.append(int(msg.value().decode('utf-8')))
             end_offset = msg.offset()
             # r = requests.get(
             #     f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/datasets/topics/{topic}',
@@ -153,7 +154,7 @@ class AnnounceHandler(RequestHandler):
             bootstrap_server = payload["bootstrap_server"]
             group = f"python-consumer-{dataset_id}/{notebook_id}"
             data = []
-            for i in range(start_offset,end_offset):
+            for i in range(start_offset,end_offset+1):
                 conf = {'bootstrap.servers': bootstrap_server,
                         'group.id': group,
                         'auto.offset.reset': 'earliest',
