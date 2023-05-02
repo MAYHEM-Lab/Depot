@@ -275,8 +275,8 @@ export default {
             schedule: null,
             retention: null,
             topic: null,
-            window:null,
-            bootstrapServer:null
+            window: null,
+            bootstrap_server:null
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',
@@ -316,8 +316,8 @@ export default {
             schedule: frequency,
             retention: retention,
             topic: null,
-            window:null,
-            bootstrapServer:null
+            window: null,
+            bootstrap_server: null
         }
         return fetch(`${DEPOT_URL}entity/${owner}/datasets/${tag}`, {
             method: 'POST',

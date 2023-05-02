@@ -21,7 +21,8 @@ object ClusterController {
     @RouteParam clusterName: String,
     sparkInfo: SparkInfo,
     notebookInfo: NotebookInfo,
-    transformerInfo: TransformerInfo
+    transformerInfo: TransformerInfo,
+    consumerInfo: ConsumerInfo
   ) extends EntityRoute
 
   case class ClusterKeys(accessKey: String, secretKey: String)
@@ -30,6 +31,7 @@ object ClusterController {
     notebook: Option[NotebookInfo],
     spark: Option[SparkInfo],
     transformer: Option[TransformerInfo],
+    consumer: Option[ConsumerInfo],
     owner: Entity,
     keys: Option[ClusterKeys]
   )
@@ -71,12 +73,13 @@ class ClusterController @Inject() (
             clusterDAO.notebook(cluster.id),
             clusterDAO.spark(cluster.id),
             clusterDAO.transformer(cluster.id),
+            clusterDAO.consumer(cluster.id),
             entityDAO.byId(cluster.ownerId),
             loadKeys
           )
           .map {
-            case (notebook, spark, transformer, Some(owner), keys) =>
-              Some(ClusterInfo(cluster, notebook, spark, transformer, owner, keys))
+            case (notebook, spark, transformer, consumer, Some(owner), keys) =>
+              Some(ClusterInfo(cluster, notebook, spark, transformer, consumer, owner, keys))
             case _ => None
           }
       case _ => Future.value(None)
@@ -143,7 +146,7 @@ class ClusterController @Inject() (
               clusterDAO.byTag(req.clusterName).flatMap {
                 case Some(cluster) =>
                   clusterDAO
-                    .provision(cluster.id, req.sparkInfo, req.notebookInfo, req.transformerInfo)
+                    .provision(cluster.id, req.sparkInfo, req.notebookInfo, req.transformerInfo, req.consumerInfo)
                     .map(_ => response.noContent)
                 case _ => Future.value(response.notFound)
               }

@@ -213,16 +213,16 @@ class EucalyptusCloudService @Inject() (
     ProcessExecutorPool {
       val iamGroup = iamGroupName(entityName)
       val privateBucket = privateBucketName(datasetOwner, datasetTag)
-      s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
-      s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
+      s"euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
+      s"euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
     }
 
   override def delDatasetACL(entityName: String, datasetOwner: String, datasetTag: String): Future[Unit] =
     ProcessExecutorPool {
       val iamGroup = iamGroupName(entityName)
       val privateBucket = privateBucketName(datasetOwner, datasetTag)
-      s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupdelpolicy $AuthFlags -p read_bucket.$privateBucket $iamGroup".!!
-      s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupdelpolicy $AuthFlags -p read_object.$privateBucket $iamGroup".!!
+      s"euare-groupdelpolicy $AuthFlags -p read_bucket.$privateBucket $iamGroup".!!
+      s"euare-groupdelpolicy $AuthFlags -p read_object.$privateBucket $iamGroup".!!
     }
 
   override def createDataset(entityName: String, datasetTag: String): Future[Unit] = {
@@ -237,22 +237,22 @@ class EucalyptusCloudService @Inject() (
       s3.setBucketCORSConfiguration(privateBucket, BucketCors)
     }.flatMap { _ =>
       ProcessExecutorPool {
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupcreate $AuthFlags $aclGroup".!!
+        s"euare-groupcreate $AuthFlags $aclGroup".!!
 
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_bucket.$publicBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$publicBucket' $PublicReaders".!!
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_object.$publicBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$publicBucket/*' $PublicReaders".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_bucket.$publicBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$publicBucket' $PublicReaders".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_object.$publicBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$publicBucket/*' $PublicReaders".!!
 
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
 
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $aclGroup".!!
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $aclGroup".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_bucket.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket' $aclGroup".!!
+        s"euare-groupaddpolicy $AuthFlags -p read_object.$privateBucket -e Allow $ReadFlags -r 'arn:aws:s3:::$privateBucket/*' $aclGroup".!!
 
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-useraddpolicy $AuthFlags -p write_bucket.$privateBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-useraddpolicy $AuthFlags -p write_object.$privateBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
+        s"euare-useraddpolicy $AuthFlags -p write_bucket.$privateBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$privateBucket' $iamGroup".!!
+        s"euare-useraddpolicy $AuthFlags -p write_object.$privateBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$privateBucket/*' $iamGroup".!!
 
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-useraddpolicy $AuthFlags -p write_bucket.$publicBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$publicBucket' $iamGroup".!!
-        s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-useraddpolicy $AuthFlags -p write_object.$publicBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$publicBucket/*' $iamGroup".!!
+        s"euare-useraddpolicy $AuthFlags -p write_bucket.$publicBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$publicBucket' $iamGroup".!!
+        s"euare-useraddpolicy $AuthFlags -p write_object.$publicBucket -e Allow $WriteFlags -r 'arn:aws:s3:::$publicBucket/*' $iamGroup".!!
       }
     }
   }
@@ -261,20 +261,20 @@ class EucalyptusCloudService @Inject() (
     val iamUser = iamUserName(name)
     val iamGroup = iamGroupName(name)
 
-    val Array(accessKey, secretKey) = s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-usercreate $AuthFlags $iamUser -k".!!.split("\n")
+    val Array(accessKey, secretKey) = s"euare-usercreate $AuthFlags $iamUser -k".!!.split("\n")
     logger.info(s"Created Eucalyptus user for $name with access key $accessKey")
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupcreate $AuthFlags $iamGroup".!!
+    s"euare-groupcreate $AuthFlags $iamGroup".!!
     logger.info(s"Created Eucalyptus group for $name")
 
     try {
-      s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupcreate $AuthFlags $PublicReaders".!!
+      s"euare-groupcreate $AuthFlags $PublicReaders".!!
       logger.info(s"Created public dataset readers group")
     } catch { case _: Throwable => }
 
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupadduser $AuthFlags -u $iamUser $PublicReaders".!!
+    s"euare-groupadduser $AuthFlags -u $iamUser $PublicReaders".!!
     logger.info(s"Added $name to public dataset readers")
 
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupadduser $AuthFlags -u $iamUser $iamGroup".!!
+    s"euare-groupadduser $AuthFlags -u $iamUser $iamGroup".!!
     logger.info(s"Added $name to group $name")
 
     (accessKey, secretKey)
@@ -283,19 +283,19 @@ class EucalyptusCloudService @Inject() (
   override def addMember(user: String, entity: String): Future[Unit] = ProcessExecutorPool {
     val iamUser = iamUserName(user)
     val iamGroup = iamGroupName(entity)
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupadduser $AuthFlags -u $iamUser $iamGroup".!!
+    s"euare-groupadduser $AuthFlags -u $iamUser $iamGroup".!!
   }
 
   override def removeMember(user: String, entity: String): Future[Unit] = ProcessExecutorPool {
     val iamUser = iamUserName(user)
     val iamGroup = iamGroupName(entity)
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupremoveuser $AuthFlags -u $iamUser $iamGroup".!!
+    s"euare-groupremoveuser $AuthFlags -u $iamUser $iamGroup".!!
   }
 
   override def deleteEntity(name: String): Future[Unit] = ProcessExecutorPool {
     val iamUser = iamUserName(name)
     val iamGroup = iamGroupName(name)
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-groupdel -r $AuthFlags $iamGroup".!!
-    s"/Users/samridhi/.pyenv/versions/2.7.18/bin/euare-userdel -r $AuthFlags $iamUser".!!
+    s"euare-groupdel -r $AuthFlags $iamGroup".!!
+    s"euare-userdel -r $AuthFlags $iamUser".!!
   }
 }

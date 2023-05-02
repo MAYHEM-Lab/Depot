@@ -14,6 +14,7 @@ from ipykernel.zmqshell import ZMQInteractiveShell
 from pyspark.sql import SparkSession
 from traitlets import Unicode, ObjectName, Instance
 from traitlets.config import Application
+
 from depot_client import DepotClient
 from depot_context import SparkExecutor, StreamContext,TransformContext, ExploreContext, DepotContext, AnnounceStreamContext
 
@@ -60,10 +61,11 @@ class DepotKernel(IPythonKernel):
     depot_context = Instance(DepotContext)
     spark_session = Instance(SparkSession)
     shell_class = DepotInteractiveShell
+
     def __init__(self, **kwargs):
         IPythonKernel.user_ns = {
             'depot': self.depot_context,
-            'spark': self.spark_session,
+            'spark': self.spark_session
         }
         super(DepotKernel, self).__init__(**kwargs)
 
@@ -145,7 +147,8 @@ class DepotKernelLauncher(Application):
             sandbox_id = self.transform.split(',')[0]
         if len(self.streaming) > 0:
             sandbox_id = self.streaming.split(',')[0]
-
+        if len(self.announce_streaming) > 0:
+            sandbox_id = self.announce_streaming.split(',')[0]
         sandbox_uid = random.randint(2001, 2 ** 16 - 10)
         sandbox_dir = f'/Users/samridhi/sandbox/{sandbox_id}'
         sandbox_conn = f'{sandbox_dir}/.connection'

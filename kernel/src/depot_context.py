@@ -5,15 +5,12 @@ import mimetypes
 import os
 import re
 from itertools import islice
-import subprocess
 
 import boto3
 from botocore.client import Config
 
 import pyspark
 from pyspark import SparkConf
-import threading
-import queue
 import requests
 
 S3_REGEX = r'^s3a://(.*?)/(.*?)$'
@@ -128,7 +125,6 @@ class SparkExecutor(Executor):
             .config(conf=conf) \
             .getOrCreate()
 
-
     def upload(self, path, fp):
         (bucket, key) = re.match(S3_REGEX, path).groups()
         self.boto.upload_fileobj(fp, bucket, key)
@@ -159,15 +155,12 @@ class SparkExecutor(Executor):
         dataset.write.format('parquet').mode('overwrite').save(path)
 
 
-
 class DepotContext:
     def initialize(self): pass
     def raw(self, dataset: str): raise NotImplementedError
     def table(self, dataset: str): raise NotImplementedError()
     def publish(self, payload): raise NotImplementedError()
     def publish_streaming(self, payload): raise NotImplementedError()
-
-
 
 
 class TransformContext(DepotContext):
@@ -192,7 +185,6 @@ class TransformContext(DepotContext):
         return self.executor.read(location)
 
     def publish(self, payload):
-        print("hello from publish in transform")
         samples = []
         rows = 0
         if isinstance(payload, pyspark.sql.DataFrame):

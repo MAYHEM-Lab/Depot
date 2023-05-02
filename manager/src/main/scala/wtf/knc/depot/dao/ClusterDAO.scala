@@ -16,7 +16,8 @@ trait ClusterDAO {
     clusterId: Long,
     sparkInfo: SparkInfo,
     notebookInfo: NotebookInfo,
-    transformerInfo: TransformerInfo
+    transformerInfo: TransformerInfo,
+    consumerInfo: ConsumerInfo
   ): Future[Unit]
 
   def spark(clusterId: Long): Future[Option[SparkInfo]]
@@ -81,11 +82,13 @@ class MysqlClusterDAO @Inject() (
     clusterId: Long,
     sparkInfo: SparkInfo,
     notebookInfo: NotebookInfo,
-    transformerInfo: TransformerInfo
+    transformerInfo: TransformerInfo,
+    consumerInfo: ConsumerInfo
   ): Future[Unit] = client.transaction { tx =>
     val spark = tx.prepare("INSERT INTO spark_info VALUES(?, ?)").modify(clusterId, sparkInfo.sparkMaster)
     val nb = tx.prepare("INSERT INTO notebook_info VALUES(?, ?)").modify(clusterId, notebookInfo.notebookMaster)
     val trans = tx.prepare("INSERT INTO transformer_info VALUES(?, ?)").modify(clusterId, transformerInfo.transformer)
+    val cons = tx.prepare("INSERT INTO consumer_info VALUES(?,?)").modify(clusterId, consumerInfo.consumer)
     Future
       .join(spark, nb, trans)
       .flatMap { _ =>

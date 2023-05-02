@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import faulthandler
 import multiprocessing
@@ -13,10 +14,8 @@ from jupyterlab.handlers.extension_manager_handler import ExtensionManager
 from jupyterlab.labapp import LabPathApp
 from jupyterlab_server import LabServerApp
 from traitlets import Unicode, Instance
-from traitlets.config import Config
-from subprocess import check_call
+
 from depot_client import DepotClient
-import os
 
 def _jupyter_server_extension_points():
     return [{'module': __name__, 'app': DepotServerApp}]
@@ -44,7 +43,7 @@ def build_kernel_spec(depot_endpoint: str, depot_access_key: str):
         'display_name': 'Python 3 (depot)',
         'language': 'python',
         'metadata': {
-            'debugger': True,
+            'debugger': True
         }
     })
 
@@ -89,6 +88,7 @@ class DepotServerApp(LabServerApp):
 
     MappingKernelManager.cull_idle_timeout = 120
     MappingKernelManager.cull_interval = 60
+    MappingKernelManager.kernel_info_timeout=180
 
     ServerApp.allow_root = True
     ServerApp.allow_remote_access = True

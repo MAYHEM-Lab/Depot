@@ -366,7 +366,8 @@ export default class DatasetCreator extends Component {
                 retention ? `${retention}.minutes` : null
             )
             this.setState({createdTag: tag})
-        } finally {
+        } 
+        finally {
             this.setState({loading: false})
         }
     }

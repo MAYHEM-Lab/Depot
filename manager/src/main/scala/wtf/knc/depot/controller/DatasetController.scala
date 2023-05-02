@@ -66,10 +66,10 @@ object DatasetController {
     retention: Option[Duration],
     schedule: Option[Duration],
     clusterAffinity: Option[String],
-    topic: String,
-    window: Long,
-    bootstrapServer:String
-  ) extends DatasetRoute
+    topic: Option[String],
+    window: Option[Long],
+    bootstrapServer:Option[String
+ ] ) extends DatasetRoute
 
   private case class UploadDataset(
     @RouteParam entityName: String,
@@ -423,14 +423,14 @@ class DatasetController @Inject() (
             require(req.triggers.isEmpty)
             require(req.content.isEmpty)
             require(req.topic.isEmpty)
-            require(req.window.isNaN)
+            require(req.window.isEmpty)
             require(req.bootstrapServer.isEmpty)
             // no notebook
             // no message dispatch
           }
           if (req.origin == Origin.Managed) {
             require(req.topic.isEmpty)
-            require(req.window.isNaN)
+            require(req.window.isEmpty)
             require(req.bootstrapServer.isEmpty)
           }
 
@@ -501,10 +501,9 @@ class DatasetController @Inject() (
                             transformationDAO.create(targetDatasetId, notebookId)
                           }
                           .before {
-                            streamingTransformationDAO.create(targetDatasetId, req.topic, notebookId).map(_ => targetDatasetId)
-                            start_consumer(notebookId, targetDatasetId, req.datasetTag,  req.topic, req.window, req.bootstrapServer)
+                            streamingTransformationDAO.create(targetDatasetId,req.topic.getOrElse(""), notebookId).map(_ => targetDatasetId)
+                            start_consumer(notebookId, targetDatasetId, req.datasetTag,  req.topic.getOrElse(""), req.window.getOrElse(0), req.bootstrapServer.getOrElse(""))
                           }
-
                         }
                       else {
                         Future.Done
