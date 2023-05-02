@@ -80,6 +80,7 @@ object DatasetController {
   private case class CreateTopicSegment(
     @RouteParam entityName: String,
     @RouteParam datasetId: Long,
+    datasetTag: String,
     topic: String,
     partition: Long,
     start_offset: Long,
@@ -175,6 +176,7 @@ object DatasetController {
 
   case class AnnounceStreamingRequest(
                                        datasetId: Long,
+                                       datasetTag: String,
                                        segmentId: Long,
                                        segmentVersion: Long,
                                        startOffset: Long,
@@ -342,6 +344,7 @@ class DatasetController @Inject() (
 
   private def start_stream_announce(
                               dataset_id: Long,
+                              dataset_tag: String,
                               segment_id: Long,
                               segment_version: Long,
                               start_offset: Long,
@@ -355,7 +358,7 @@ class DatasetController @Inject() (
         clusterDAO.consumer(clusterList.headOption.get.id).flatMap {
             case (Some(consumerInfo)) =>
               val client = Http.client.newService(consumerInfo.consumer)
-              val body = AnnounceStreamingRequest(dataset_id, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
+              val body = AnnounceStreamingRequest(dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
               val data = objectMapper.writeValueAsBuf(body)
               val request = Request(Version.Http11, Method.Post, "/announce")
               request.content = data
@@ -879,7 +882,7 @@ class DatasetController @Inject() (
                 val announced = dataset(Some(Role.Owner)).flatMap { dataset =>
                   segmentDAO.getSegmentAnnounce(dataset.id, req.version)
                 }.flatMap { segment =>
-                  start_stream_announce(segment.datasetId,  segment.segmentId, segment.segmentVersion, segment.startOffset, segment.endOffset, segment.topic, segment.notebookTag, segment.bootstrapServer)
+                  start_stream_announce(segment.datasetId, segment.datasetTag, segment.segmentId, segment.segmentVersion, segment.startOffset, segment.endOffset, segment.topic, segment.notebookTag, segment.bootstrapServer)
                 }.map{ response =>
                     response.contains("true")
                 }
@@ -953,7 +956,7 @@ class DatasetController @Inject() (
             segmentDAO.make(dataset.id).flatMap { segmentId =>
               segmentDAO
                 .byId(segmentId).flatMap { segment => {
-                segmentDAO.insertSegmentAnnounce(req.datasetId, segment.id, segment.version, req.topic, req.start_offset, req.end_offset, req.notebook_tag, req.bootstrap_server)
+                segmentDAO.insertSegmentAnnounce(req.datasetId, req.datasetTag, segment.id, segment.version, req.topic, req.start_offset, req.end_offset, req.notebook_tag, req.bootstrap_server)
                 createResponseForStreamingSegment(dataset.tag, segment.id, segment.version)
               }
               }.join {

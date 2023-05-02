@@ -1,0 +1,1 @@
+ALTER TABLE streaming_segment_info ADD COLUMN dataset_tag VARCHAR(32) NOT NULL DEFAULT "";

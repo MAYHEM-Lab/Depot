@@ -77,7 +77,7 @@ class DepotKernelManager(AsyncIOLoopKernelManager):
     autorestart = False
 
 
-async def execute_notebook(client, data, entity, tag, dataset_id, segment_id, segment_version, contents, sandbox_id, announce_context):
+async def execute_notebook(client, data, entity, dataset_tag, tag, dataset_id, segment_id, segment_version, contents, sandbox_id, announce_context):
     try:
         nb = nbformat.reads(json.dumps(contents), as_version=4)
         orig_parameters = extract_parameters(nb)
@@ -99,11 +99,11 @@ async def execute_notebook(client, data, entity, tag, dataset_id, segment_id, se
         await nb_client.async_execute(cleanup_kc=False)
         logger.info(f'Successfully executed notebook')
     except Exception as ex:
-        logger.exception(f'Error while transforming [{entity}/{tag}@{segment_id}]', exc_info=ex)
+        logger.exception(f'Error while transforming [{entity}/{dataset_tag}@{segment_id}]', exc_info=ex)
         try:
-            client.fail_segment(entity, tag, segment_version, type(ex).__name__, str(ex))
+            client.fail_segment(entity, dataset_tag, segment_version, type(ex).__name__, str(ex))
         except Exception as ex2:
-            logger.exception(f'Error while failing segment [{entity}/{tag}@{segment_id}]', exc_info=ex2)
+            logger.exception(f'Error while failing segment [{entity}/{dataset_tag}@{segment_id}]', exc_info=ex2)
     finally:
         if nb_client:
             try:

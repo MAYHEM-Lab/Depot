@@ -43,7 +43,7 @@ trait SegmentDAO extends DAO {
   def releaseRef(retainer: Retainer)(implicit ctx: Ctx = defaultCtx): Future[Unit]
   def refsByHolder(who: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
   def refsBySegment(segmentId: Long)(implicit ctx: Ctx = defaultCtx): Future[Seq[Retainer]]
-  def insertSegmentAnnounce(datasetId: Long, segmentId: Long, segmentVersion: Long, topic:String, start_offset:Long, end_offset:Long, notebook_tag:String, bootstrap_server: String)(implicit ctx: Ctx = defaultCtx): Future[Unit]
+  def insertSegmentAnnounce(datasetId: Long, datasetTag: String, segmentId: Long, segmentVersion: Long, topic:String, start_offset:Long, end_offset:Long, notebook_tag:String, bootstrap_server: String)(implicit ctx: Ctx = defaultCtx): Future[Unit]
   def getSegmentAnnounce(datasetId: Long, segmentVersion: Long)(implicit ctx: Ctx = defaultCtx): Future[SegmentAnnounceData]
 }
 
@@ -79,6 +79,7 @@ class MysqlSegmentDAO @Inject() (
 
   def extractSegmentAnnounce(r: Row): SegmentAnnounceData = SegmentAnnounceData(
     r.longOrZero("dataset_id"),
+    r.stringOrNull("dataset_tag"),
     r.longOrZero("segment_id"),
     r.longOrZero("start_offset"),
     r.longOrZero("end_offset"),
@@ -182,10 +183,10 @@ class MysqlSegmentDAO @Inject() (
       .unit
   }
 
-  override def insertSegmentAnnounce(datasetId: Long, segment_id: Long, segment_version: Long, topic:String, start_offset:Long, end_offset:Long, notebook_tag:String, bootstrap_server: String)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
+  override def insertSegmentAnnounce(datasetId: Long, datasetTag: String, segment_id: Long, segment_version: Long, topic:String, start_offset:Long, end_offset:Long, notebook_tag:String, bootstrap_server: String)(implicit ctx: MysqlCtx): Future[Unit] = ctx { tx =>
     tx.prepare(
-      "INSERT INTO streaming_segment_info(dataset_id, segment_id, segment_version, topic, start_offset, end_offset, notebook_tag, bootstrap_server) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).modify(datasetId, segment_id, segment_version, topic, start_offset, end_offset, notebook_tag, bootstrap_server)
+      "INSERT INTO streaming_segment_info(dataset_id, dataset_tag, segment_id, segment_version, topic, start_offset, end_offset, notebook_tag, bootstrap_server) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).modify(datasetId, datasetTag, segment_id, segment_version, topic, start_offset, end_offset, notebook_tag, bootstrap_server)
       .unit
   }
 
