@@ -31,6 +31,7 @@ case class SegmentInput(
 
 case class SegmentAnnounceData(
   datasetId: Long,
+  datasetTag: String,
   segmentId: Long,
   startOffset: Long,
   endOffset: Long,

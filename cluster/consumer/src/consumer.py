@@ -58,7 +58,7 @@ async def consume(options, depot_client, notebook_tag, dataset_tag, dataset_id, 
                 r = requests.post(
                         f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/datasets/{dataset_id}/segment',
                         headers={'access_key': options.depot_access_key},
-                        json = {'notebook_tag':str(notebook_tag), 'end_offset':int(end_offset), 'start_offset':int(start_offset), 'topic':str(topic), 'partition':int(0), 'bootstrap_server': str(bootstrap_server)},
+                        json = {'dataset_tag': str(dataset_tag), 'notebook_tag':str(notebook_tag), 'end_offset':int(end_offset), 'start_offset':int(start_offset), 'topic':str(topic), 'partition':int(0), 'bootstrap_server': str(bootstrap_server)},
                     )
                 print(r)
                 if r.ok:
@@ -72,7 +72,7 @@ async def consume(options, depot_client, notebook_tag, dataset_tag, dataset_id, 
                     sandbox_id = uuid.uuid4().hex
                     print(data)
                     print(f"start_offset: {start_offset}, end_offset: {end_offset}")
-                    await execute_notebook(depot_client, data, entity, notebook_tag, dataset_id, segment_id, segment_version, contents, sandbox_id, False)
+                    await execute_notebook(depot_client, data, entity, dataset_tag, notebook_tag, dataset_id, segment_id, segment_version, contents, sandbox_id, False)
                     print("executed notebook")
                 else:
                     print("Error while executing notebook")
@@ -148,6 +148,7 @@ class AnnounceHandler(RequestHandler):
             start_offset = payload['start_offset']
             end_offset = payload['end_offset']
             notebook_id = payload['notebook_tag']
+            dataset_tag = payload["dataset_tag"]
             segment_id = payload['segment_id']
             segment_version = payload['segment_version']
             dataset_id = payload["dataset_id"]
@@ -186,7 +187,7 @@ class AnnounceHandler(RequestHandler):
                  #pass this path in the depot kernel object in "streaming" string while executing nb
                 print(f"executing notebook {notebook_id}")
                 sandbox_id = uuid.uuid4().hex
-                await execute_notebook(depot_client, data, entity, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
+                await execute_notebook(depot_client, data, entity, dataset_tag, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
             else:
                 print("Error while executing notebook")
                 #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
