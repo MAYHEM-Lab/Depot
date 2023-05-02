@@ -55,7 +55,7 @@ export default {
     },
 
     readNotebook: (owner, tag) => {
-        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/topic/contents`)
+        return fetch(`${DEPOT_URL}entity/${owner}/notebooks/${tag}/contents`)
             .then(handleErrors)
             .then(response => response.json())
     },
