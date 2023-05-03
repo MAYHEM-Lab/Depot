@@ -10,10 +10,14 @@ class DepotClient:
         url = f'{self.depot_destination}/api/clusters'
         if entity is not None and cluster is not None:
             url += f'/{entity}/{cluster}'
+        print("!!!!!")
+        print(url)
+        print(self.access_key)
         r = requests.get(
             url,
             headers={'access_key': self.access_key}
         )
+        print(r.request)
         info = r.json()
         assert r.status_code == 200, f'Unable to access cluster {entity}/{cluster}'
         return info
@@ -56,8 +60,3 @@ class DepotClient:
             headers={'access_key': self.access_key}
         )
         assert r.status_code == 201
-
-    def get_notebooks(self, owner):
-        r =   requests.get(f'{self.depot_destination}/api/entity/${owner}/notebooks/topic/')
-        notebooks = r.json()
-        return notebooks
