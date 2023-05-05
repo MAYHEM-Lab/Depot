@@ -88,7 +88,6 @@ class DepotServerApp(LabServerApp):
 
     MappingKernelManager.cull_idle_timeout = 120
     MappingKernelManager.cull_interval = 60
-    MappingKernelManager.kernel_info_timeout=180
 
     ServerApp.allow_root = True
     ServerApp.allow_remote_access = True

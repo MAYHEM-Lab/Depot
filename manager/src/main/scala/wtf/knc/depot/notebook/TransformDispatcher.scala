@@ -23,6 +23,24 @@ object TransformDispatcher {
   case class TransformResponse(
     artifactId: String
   )
+
+  case class AnnounceStreamingRequest(
+                                       datasetId: Long,
+                                       datasetTag: String,
+                                       segmentId: Long,
+                                       segmentVersion: Long,
+                                       startOffset: Long,
+                                       endOffset: Long,
+                                       notebookTag: String,
+                                       topic: String,
+                                       bootstrapServer: String
+                                     )
+
+  case class ConsumerResponse(
+                               success: String
+                             )
+
+
 }
 
 @Singleton
@@ -63,4 +81,33 @@ class TransformDispatcher @Inject() (
         case _ => Future.exception(new Exception(s"Cluster $clusterId does not have a transformer"))
       }
   }
+
+   def start_stream_announce(
+    clusterId: Long,
+                                     dataset_id: Long,
+                                     dataset_tag: String,
+                                     segment_id: Long,
+                                     segment_version: Long,
+                                     start_offset: Long,
+                                     end_offset: Long,
+                                     topic: String,
+                                     notebook_tag: String,
+                                     bootstrap_server: String
+                                   ): Future[String] = {
+    clusterDAO.consumer(clusterId).flatMap {
+          case (Some(consumerInfo)) =>
+            val client = Http.client.newService(consumerInfo.consumer)
+            val body = AnnounceStreamingRequest(dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, notebook_tag, topic, bootstrap_server)
+            val data = objectMapper.writeValueAsBuf(body)
+            val request = Request(Version.Http11, Method.Post, "/announce")
+            request.content = data
+            request.contentType = MediaType.Json
+            client(request)
+              .map { response =>
+                objectMapper.parse[ConsumerResponse](response.content)
+              }.map(_.success)
+              .ensure(client.close())
+          case _ => Future.exception(new Exception(s"Cluster ${clusterId} does not have a consumer"))
+        }
+      }
 }

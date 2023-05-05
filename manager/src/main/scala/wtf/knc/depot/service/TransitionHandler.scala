@@ -93,7 +93,7 @@ class TransitionHandler @Inject() (
           work
             .before { segmentDAO.recordTransition(segmentId, transition) }
             .before { segmentDAO.updateRefState(segmentId, transition.to) }
-            .raiseWithin(10.seconds)(DefaultTimer)
+            .raiseWithin(30.seconds)(DefaultTimer)
         }
       }
       .onSuccess { _ => logger.info(s"Handled transition request for $segmentId: $transition") }
@@ -133,24 +133,32 @@ class TransitionHandler @Inject() (
 
     node.flatMap {
       case (segment, Some(notebookId), dataset, Some(owner), Some(cluster)) =>
+        if (dataset.origin == Origin.Streaming) {
+          segmentDAO.getSegmentAnnounce(dataset.id, segment.version).flatMap { segment =>
+            transformClient.start_stream_announce(cluster.id, segment.datasetId, segment.datasetTag, segment.segmentId, segment.segmentVersion, segment.startOffset, segment.endOffset, segment.topic, segment.notebookTag, segment.bootstrapServer)
+          }.onSuccess{
+            response => logger.info(s"response: $response") }
+            .unit
+        } else {
         val (bucket, key) = cloudService.allocatePath(owner, dataset, segment)
         val path = s"s3a://$bucket/$key"
         val transformationId = UUID.randomUUID().toString
         logger.info(
           s"Dispatching transformation [$transformationId] in ${owner.name}/${cluster.tag} to generate ${owner.name}/${dataset.tag}@${segment.version}"
         )
-        transformClient
-          .transform(
-            notebookId,
-            cluster.id,
-            transformationId,
-            path,
-            owner.name,
-            dataset.tag,
-            segment.version
-          )
-          .onSuccess { artifact => logger.info(s"Transformation artifact: $artifact") }
-          .unit
+          transformClient
+            .transform(
+              notebookId,
+              cluster.id,
+              transformationId,
+              path,
+              owner.name,
+              dataset.tag,
+              segment.version
+            )
+            .onSuccess { artifact => logger.info(s"Transformation artifact: $artifact") }
+            .unit
+        }
 
       case (_, None, _, _, _) => Future.exception(new Exception(s"No generating notebook for segment $segmentId"))
       case (_, _, _, _, None) => Future.exception(new Exception(s"No cluster found to generate segment $segmentId"))

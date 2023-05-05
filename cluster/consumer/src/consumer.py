@@ -32,7 +32,7 @@ async def consume(options, depot_client, notebook_tag, dataset_tag, dataset_id, 
             print(f"starting offset: {msg.offset()}")
             start_offset = msg.offset()
         if len(data) == int(window_length) - 1:
-            data.append(int(msg.value().decode('utf-8')))
+            data.append(float(msg.value().decode('utf-8')))
             end_offset = msg.offset()
             # r = requests.get(
             #     f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/datasets/topics/{topic}',
@@ -79,7 +79,7 @@ async def consume(options, depot_client, notebook_tag, dataset_tag, dataset_id, 
                     #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
                 data=[]
         elif len(data)<window_length:
-            data.append(int(msg.value().decode('utf-8')))
+            data.append(float(msg.value().decode('utf-8')))
             print(len(data))
 
 def start_consuming(topic, notebook_tag, window_length, dataset_tag, dataset_id, bootstrap_server, group_id, auto_offset_reset):
@@ -90,7 +90,49 @@ def start_consuming(topic, notebook_tag, window_length, dataset_tag, dataset_id,
     ioloop.current(instance=False).spawn_callback(consume, options, depot_client, notebook_tag, dataset_tag, dataset_id, consumer, topic, window_length, bootstrap_server)
     ioloop.start()
 
+def prepare_announce(topic, bootstrap_server, notebook_id, dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, group):
+    ioloop = IOLoop()
+    ioloop.current(instance=False).spawn_callback(process_announce, bootstrap_server, topic, notebook_id, dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, group)
+    ioloop.start()
 
+async def process_announce(bootstrap_server, topic, notebook_id, dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, group):
+    data = []
+    for i in range(start_offset,end_offset+1):
+        conf = {'bootstrap.servers': bootstrap_server,
+                'group.id': group,
+                'auto.offset.reset': 'earliest',
+                'isolation.level':'read_committed',
+                }
+        consumer = DeserializingConsumer(conf)
+        offset = int(i)
+        partition = 0
+        partition = TopicPartition(topic, partition, offset)
+        consumer.assign([partition])
+        consumer.seek(partition)
+        #  Read the message
+        message = consumer.poll()
+        print("Output: " + str(message.partition()) + " " + str(message.offset()), message.value())
+        data.append(int(message.value()))
+        print(data)
+    r = requests.get(
+        f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{notebook_id}/contents',
+        headers={'access_key': options.depot_access_key}
+    )
+    contents = r.json()
+    print(contents)
+    if (contents.get('cells')) and len(contents['cells'])>0:
+        #call manager to create new segment and send the path of the created segment
+        #IMP NOTE: notebook <> data mapping needs to be done, so while creating this dataset info,
+        # store the notebook ID in streaming_data_notebook dataset with data-tag and notebook tag info.
+        # And then during this notebooks execution, call this table and get the dataset tag name
+        entity = cluster_info["owner"]["name"]
+        #pass this path in the depot kernel object in "streaming" string while executing nb
+        print(f"executing notebook {notebook_id}")
+        sandbox_id = uuid.uuid4().hex
+        await execute_notebook(depot_client, data, entity, dataset_tag, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
+    else:
+        print("Error while executing notebook")
+        #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
 
 class ConsumeHandler(RequestHandler):
     def set_default_headers(self):
@@ -154,43 +196,7 @@ class AnnounceHandler(RequestHandler):
             dataset_id = payload["dataset_id"]
             bootstrap_server = payload["bootstrap_server"]
             group = f"python-consumer-{dataset_id}/{notebook_id}"
-            data = []
-            for i in range(start_offset,end_offset+1):
-                conf = {'bootstrap.servers': bootstrap_server,
-                        'group.id': group,
-                        'auto.offset.reset': 'earliest',
-                        'isolation.level':'read_committed',
-                        }
-                consumer = DeserializingConsumer(conf)
-                offset = int(i)
-                partition = 0
-                partition = TopicPartition(topic, partition, offset)
-                consumer.assign([partition])
-                consumer.seek(partition)
-                #  Read the message
-                message = consumer.poll()
-                print("Output: " + str(message.partition()) + " " + str(message.offset()), message.value())
-                data.append(int(message.value()))
-                print(data)
-            r = requests.get(
-                f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{notebook_id}/contents',
-                headers={'access_key': options.depot_access_key}
-            )
-            contents = r.json()
-            print(contents)
-            if (contents.get('cells')) and len(contents['cells'])>0:
-                #call manager to create new segment and send the path of the created segment
-                #IMP NOTE: notebook <> data mapping needs to be done, so while creating this dataset info,
-                # store the notebook ID in streaming_data_notebook dataset with data-tag and notebook tag info.
-                # And then during this notebooks execution, call this table and get the dataset tag name
-                entity = cluster_info["owner"]["name"]
-                 #pass this path in the depot kernel object in "streaming" string while executing nb
-                print(f"executing notebook {notebook_id}")
-                sandbox_id = uuid.uuid4().hex
-                await execute_notebook(depot_client, data, entity, dataset_tag, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
-            else:
-                print("Error while executing notebook")
-                #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
+            threading.Thread(target=prepare_announce, args = (topic, bootstrap_server, notebook_id, dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, group)).start()
             return self.finish({"success": "true"})
         except Exception as ex:
             return self.write_error(500, exc_info=ex)
