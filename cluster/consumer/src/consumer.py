@@ -112,7 +112,7 @@ async def process_announce(bootstrap_server, topic, notebook_id, dataset_id, dat
         #  Read the message
         message = consumer.poll()
         print("Output: " + str(message.partition()) + " " + str(message.offset()), message.value())
-        data.append(int(message.value()))
+        data.append(float(message.value()))
         print(data)
     r = requests.get(
         f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{notebook_id}/contents',
