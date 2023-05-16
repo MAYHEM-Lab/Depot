@@ -97,42 +97,47 @@ def prepare_announce(topic, bootstrap_server, notebook_id, dataset_id, dataset_t
 
 async def process_announce(bootstrap_server, topic, notebook_id, dataset_id, dataset_tag, segment_id, segment_version, start_offset, end_offset, group):
     data = []
-    for i in range(start_offset,end_offset+1):
-        conf = {'bootstrap.servers': bootstrap_server,
+    entity = cluster_info["owner"]["name"]
+    try:
+        for i in range(start_offset,end_offset+1):
+            conf = {'bootstrap.servers': bootstrap_server,
                 'group.id': group,
                 'auto.offset.reset': 'earliest',
                 'isolation.level':'read_committed',
                 }
-        consumer = DeserializingConsumer(conf)
-        offset = int(i)
-        partition = 0
-        partition = TopicPartition(topic, partition, offset)
-        consumer.assign([partition])
-        consumer.seek(partition)
+            consumer = DeserializingConsumer(conf)
+            offset = int(i)
+            partition = 0
+            partition = TopicPartition(topic, partition, offset)
+            consumer.assign([partition])
+            consumer.seek(partition)
         #  Read the message
-        message = consumer.poll()
-        print("Output: " + str(message.partition()) + " " + str(message.offset()), message.value())
-        data.append(float(message.value()))
-        print(data)
-    r = requests.get(
+            message = consumer.poll()
+            print("Output: " + str(message.partition()) + " " + str(message.offset()), message.value())
+            data.append(float(message.value()))
+            print(data)
+    except Exception as ex:
+        depot_client.fail_segment(entity, dataset_tag, segment_version, type(ex).__name__, str(ex))
+    else:
+        r = requests.get(
         f'{options.depot_endpoint}/api/entity/{cluster_info["owner"]["name"]}/notebooks/{notebook_id}/contents',
         headers={'access_key': options.depot_access_key}
-    )
-    contents = r.json()
-    print(contents)
-    if (contents.get('cells')) and len(contents['cells'])>0:
+        )
+        contents = r.json()
+        print(contents)
+        if (contents.get('cells')) and len(contents['cells'])>0:
         #call manager to create new segment and send the path of the created segment
         #IMP NOTE: notebook <> data mapping needs to be done, so while creating this dataset info,
         # store the notebook ID in streaming_data_notebook dataset with data-tag and notebook tag info.
         # And then during this notebooks execution, call this table and get the dataset tag name
-        entity = cluster_info["owner"]["name"]
+
         #pass this path in the depot kernel object in "streaming" string while executing nb
-        print(f"executing notebook {notebook_id}")
-        sandbox_id = uuid.uuid4().hex
-        await execute_notebook(depot_client, data, entity, dataset_tag, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
-    else:
-        print("Error while executing notebook")
-        #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
+            print(f"executing notebook {notebook_id}")
+            sandbox_id = uuid.uuid4().hex
+            await execute_notebook(depot_client, data, entity, dataset_tag, notebook_id, dataset_id, segment_id, segment_version, contents, sandbox_id, True)
+        else:
+            print("Error while executing notebook")
+            #depot_context (StreamContext) will then upload the segment directly onto this path, and it will also be shown on the UI as it was created earlier
 
 class ConsumeHandler(RequestHandler):
     def set_default_headers(self):
